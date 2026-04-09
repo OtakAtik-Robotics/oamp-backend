@@ -28,7 +28,7 @@ Following Standard Go Project Layout:
 ### Installation
 1. Clone the repository:
    ```bash
-   git clone [https://github.com/OtakAtik-Robotics/oamp-backend.git](https://github.com/OtakAtik-Robotics/oamp-backend.git)
+   git clone https://github.com/OtakAtik-Robotics/oamp-backend.git
    cd oamp-backend
     ```
 2. Install dependencies:
