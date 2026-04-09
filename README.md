@@ -64,5 +64,4 @@ Base URL: `http://localhost:8080/api/v1`
 ### Mobile App
 
 * `GET /mobile/results/:uid` - Fetch participant and game session data
-
 * `POST /mobile/quiz` - Submit post-game quiz score
