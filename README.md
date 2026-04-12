@@ -1,67 +1,81 @@
-# OAMP Backend 
+# OAMP Backend
 
-> REST API and Database service for the Block Design Test (BDT) cognitive research project. 
-> Maintained by the Backend Developers of OtakAtik-Robotics.
+REST API server for the OtakAtik-Robotics event platform.
+Handles participant registration, robot game sessions, leaderboard, quiz, and report exports.
 
-This repository serves as the central hub for the OAMP project, handling participant registration, cognitive evaluation data processing from the robot's AI, and serving quiz data to the mobile application.
+Maintained by the Backend Developers of OtakAtik-Robotics.
 
-## 🛠️ Tech Stack
-* **Language:** Golang (Go)
-* **Framework:** Gin Web Framework
-* **ORM:** GORM
-* **Database:** PostgreSQL
-* **Environment:** Godotenv
+## Tech Stack
 
-##  Project Structure
-Following Standard Go Project Layout:
-* `cmd/api/` - Main application entry point
-* `internal/config/` - Database and environment configurations
-* `internal/handler/` - HTTP route handlers (Controllers)
-* `internal/model/` - GORM database schemas
+- **Language:** Go
+- **Framework:** Gin
+- **ORM:** GORM
+- **Database:** PostgreSQL
+- **Export:** Excelize (Excel), gofpdf (PDF)
 
-##  Getting Started
+## Project Structure
+
+```
+cmd/api/main.go            # Entry point
+internal/
+  config/database.go       # DB connection + AutoMigrate
+  controller/              # Route handlers
+    participant.go         #   POST /participants
+    robot.go               #   Robot auth, sessions, face logs
+    app.go                 #   Android auth, quiz
+    leaderboard.go         #   GET /leaderboard
+    export.go              #   Excel & PDF export
+    health.go              #   GET /health
+  model/model.go           # GORM models
+  route/route.go           # Route definitions + CORS
+pkg/response/response.go   # Standardized JSON response helper
+```
+
+## Getting Started
 
 ### Prerequisites
-* Go (1.20 or newer)
-* PostgreSQL database server
 
-### Installation
-1. Clone the repository:
+- Go 1.22+
+- PostgreSQL
+
+### Setup
+
+1. Clone and install dependencies:
    ```bash
    git clone https://github.com/OtakAtik-Robotics/oamp-backend.git
    cd oamp-backend
-    ```
-2. Install dependencies:
-    ```bash
-    go mod tidy
-    ```
-3. Create a .env file in the root directory based on .env.example:
-    ```bash
-    DB_HOST=localhost
-    DB_USER=postgres
-    DB_PASSWORD=yourpassword
-    DB_NAME=bdt_db
-    DB_PORT=5432
-    PORT=8080
-    ```
-4. Run the development server:
-    ```bash
-    go run cmd/api/main.go
-    ```
+   go mod tidy
+   ```
 
-## API Overview
-Base URL: `http://localhost:8080/api/v1`
+2. Create database:
+   ```bash
+   createdb oamp
+   ```
 
-### Hardware / Registration
+3. Copy `.env.example` to `.env` and fill in your database credentials:
+   ```bash
+   cp .env.example .env
+   ```
 
-* `POST /participants` - Register new participant
-* `GET /participants/:uid` - Fetch participant data (used by Robot for height auto-adjustment)
+4. Run the server:
+   ```bash
+   go run ./cmd/api
+   ```
 
-### Robot AI
+Tables are auto-created via GORM AutoMigrate on startup.
 
-* `POST /sessions` - Submit game session results (Cognitive score, dexterity, face expressions)
+### Build
 
-### Mobile App
+```bash
+go build -o bin/server ./cmd/api
+./bin/server
+```
 
-* `GET /mobile/results/:uid` - Fetch participant and game session data
-* `POST /mobile/quiz` - Submit post-game quiz score
+## API Documentation
+
+See [API.md](API.md) for the full endpoint reference with request/response examples.
+
+## Related Repositories
+
+- **oamp-ai** — Python robot client (YOLO, MediaPipe, DeepFace, Wav2Vec2, ESP32 serial). Communicates with this server via `api_client.py`.
+- **oamp-android** — Android app for quiz and participant results.

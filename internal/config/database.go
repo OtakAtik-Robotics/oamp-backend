@@ -1,9 +1,9 @@
 package config
 
 import (
-	"bdt-server/internal/model"
 	"fmt"
 	"log"
+	"oamp-backend/internal/model"
 	"os"
 
 	"gorm.io/driver/postgres"

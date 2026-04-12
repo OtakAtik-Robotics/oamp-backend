@@ -2,9 +2,9 @@ package main
 
 import (
 	"log"
+	"oamp-backend/internal/config"
+	"oamp-backend/internal/route"
 	"os"
-	"server/internal/config"
-	"server/internal/handler"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -19,16 +19,7 @@ func main() {
 	config.ConnectDB()
 
 	r := gin.Default()
-
-	api := r.Group("/api/v1")
-	{
-		api.POST("/participants", handler.RegisterParticipant)
-		api.GET("/participants/:uid", handler.GetParticipantByUID)
-		api.POST("/sessions", handler.SubmitGameSession)
-
-		api.GET("/mobile/results/:uid", handler.GetParticipantResult)
-		api.POST("/mobile/quiz", handler.SubmitQuizResult)
-	}
+	route.SetupRoutes(r)
 
 	port := os.Getenv("PORT")
 	if port == "" {
