@@ -20,7 +20,7 @@ type Participant struct {
 type GameSession struct {
 	ID              uint        `json:"id" gorm:"primaryKey"`
 	ParticipantID   uint        `json:"participant_id" binding:"required" gorm:"not null"`
-	Participant     Participant `json:"-" gorm:"foreignKey:ParticipantID"`
+	Participant     Participant `json:"-" binding:"-" gorm:"foreignKey:ParticipantID"`
 	Mode            string      `json:"mode" gorm:"size:20"`
 	LevelReached    int         `json:"level_reached"`
 	TotalTime       float64     `json:"total_time"`
