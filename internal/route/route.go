@@ -43,6 +43,7 @@ func SetupRoutes(r *gin.Engine) {
 
 		// Leaderboard
 		api.GET("/leaderboard", controller.GetLeaderboard)
+		api.GET("/leaderboard/timeline", controller.GetLeaderboardTimeline)
 
 		// Export
 		api.GET("/export/excel", controller.ExportExcel)
