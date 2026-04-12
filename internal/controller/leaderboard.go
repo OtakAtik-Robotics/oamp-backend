@@ -10,6 +10,7 @@ import (
 type LeaderboardEntry struct {
 	Rank            int     `json:"rank"`
 	ParticipantID   uint    `json:"participant_id"`
+	UID             string  `json:"uid"`
 	Name            string  `json:"name"`
 	Grade           string  `json:"grade"`
 	Age             int     `json:"age"`
@@ -24,6 +25,7 @@ func fetchLeaderboard(limit int) []LeaderboardEntry {
 		SELECT
 			ROW_NUMBER() OVER (ORDER BY sub.visuo_spatial_fit DESC, sub.total_time ASC) AS rank,
 			sub.participant_id,
+			p.uid,
 			p.name,
 			p.grade,
 			p.age,

@@ -12,7 +12,7 @@ import (
 func RegisterParticipant(c *gin.Context) {
 	var participant model.Participant
 	if err := c.ShouldBindJSON(&participant); err != nil {
-		response.Error(c, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, response.FormatBindError(err))
 		return
 	}
 

@@ -381,6 +381,7 @@ One entry per participant (uses `DISTINCT ON`), ranked by `visuo_spatial_fit` de
     {
       "rank": 1,
       "participant_id": 1,
+      "uid": "RFID-001",
       "name": "Budi Santoso",
       "grade": "5A",
       "age": 10,
@@ -392,6 +393,7 @@ One entry per participant (uses `DISTINCT ON`), ranked by `visuo_spatial_fit` de
     {
       "rank": 2,
       "participant_id": 2,
+      "uid": "RFID-002",
       "name": "Ani Lestari",
       "grade": "4B",
       "age": 9,
@@ -431,6 +433,51 @@ Downloads a PDF file with the leaderboard table.
 **Response:** Binary `.pdf` file download (`Content-Disposition: attachment; filename=oamp-leaderboard.pdf`)
 
 If no sessions exist, the PDF contains the text "No game sessions recorded yet."
+
+---
+
+### `GET /api/v1/export/rapor/{uid}`
+
+Downloads a PDF rapor (report card) for an individual participant.
+
+**URL parameters:**
+| Param | Type | Description |
+|-------|------|-------------|
+| `uid` | string | Participant UID (RFID tag / QR code) |
+
+**Response `200`:** Binary `.pdf` file (`Content-Disposition: attachment; filename=rapor-{name}.pdf`)
+
+**PDF contents:**
+
+| Section | Details |
+|---------|---------|
+| Header | "Rapor Peserta OAMP" + subtitle |
+| Data Pribadi | UID, Kelas, Umur, Jenis Kelamin, Tinggi, Berat, Detak Jantung, SpO2, Grip Strength |
+| Riwayat Game | Tabel semua sesi: tanggal, mode, level, waktu, VisuoSpatialFit, Dexterity |
+| Ringkasan Performa | Total sesi, skor VisuoSpatial terbaik, level tertinggi, rata-rata waktu |
+| Hasil Quiz | Tabel quiz (jika ada): tanggal, skor |
+| Footer | Tanggal cetak |
+
+If the participant has no sessions yet, the rapor still generates with participant data only (no session table).
+
+**Response `404`:**
+```json
+{
+  "status": "error",
+  "message": "Participant not found",
+  "data": null
+}
+```
+
+**Frontend usage:**
+```js
+const res = await api.get(`/export/rapor/${uid}`, { responseType: "blob" });
+const url = window.URL.createObjectURL(res);
+const link = document.createElement("a");
+link.href = url;
+link.setAttribute("download", `rapor-${uid}.pdf`);
+link.click();
+```
 
 ---
 

@@ -30,7 +30,7 @@ func AppAuth(c *gin.Context) {
 func SubmitQuiz(c *gin.Context) {
 	var quizResult model.QuizResult
 	if err := c.ShouldBindJSON(&quizResult); err != nil {
-		response.Error(c, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, response.FormatBindError(err))
 		return
 	}
 

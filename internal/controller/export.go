@@ -7,6 +7,8 @@ import (
 	"oamp-backend/internal/config"
 	"oamp-backend/internal/model"
 	"oamp-backend/pkg/response"
+	"regexp"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jung-kurt/gofpdf"
@@ -165,4 +167,219 @@ func ExportPDF(c *gin.Context) {
 	c.Header("Content-Type", "application/pdf")
 	c.Header("Content-Disposition", "attachment; filename=oamp-leaderboard.pdf")
 	c.Data(http.StatusOK, "application/pdf", buf.Bytes())
+}
+
+func ExportRapor(c *gin.Context) {
+	uid := c.Param("uid")
+
+	// Lookup participant
+	var participant model.Participant
+	if err := config.DB.Where("uid = ?", uid).First(&participant).Error; err != nil {
+		response.Error(c, http.StatusNotFound, "Participant not found")
+		return
+	}
+
+	// Get all sessions for this participant
+	var sessions []model.GameSession
+	config.DB.Where("participant_id = ?", participant.ID).Order("created_at asc").Find(&sessions)
+
+	// Get quiz results
+	var quizzes []model.QuizResult
+	config.DB.Where("participant_id = ?", participant.ID).Order("created_at asc").Find(&quizzes)
+
+	pdf := gofpdf.New("P", "mm", "A4", "")
+	pdf.AddPage()
+	pdf.SetAutoPageBreak(true, 15)
+
+	// --- Header ---
+	pdf.SetFont("Helvetica", "B", 18)
+	pdf.Cell(0, 10, "Rapor Peserta OAMP")
+	pdf.Ln(8)
+	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetTextColor(120, 120, 120)
+	pdf.Cell(0, 5, "OtakAtik-Robotics Event Report")
+	pdf.Ln(10)
+
+	// Divider line
+	pdf.SetDrawColor(200, 200, 200)
+	pdf.Line(10, pdf.GetY(), 200, pdf.GetY())
+	pdf.Ln(5)
+
+	// --- Participant Info ---
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetFont("Helvetica", "B", 13)
+	pdf.Cell(0, 8, participant.Name)
+	pdf.Ln(8)
+
+	pdf.SetFont("Helvetica", "", 10)
+	info := [][]string{
+		{"UID", participant.UID},
+		{"Kelas", participant.Grade},
+		{"Umur", fmt.Sprintf("%d tahun", participant.Age)},
+		{"Jenis Kelamin", participant.Gender},
+		{"Tinggi Badan", fmt.Sprintf("%.1f cm", participant.Height)},
+		{"Berat Badan", fmt.Sprintf("%.1f kg", participant.Weight)},
+		{"Detak Jantung", fmt.Sprintf("%d bpm", participant.HeartRate)},
+		{"SpO2", fmt.Sprintf("%.1f%%", participant.SpO2)},
+		{"Kekuatan Grip", fmt.Sprintf("%.1f kg", participant.GripStrength)},
+	}
+
+	labelW := 40.0
+	valueW := 80.0
+	for _, row := range info {
+		pdf.SetFont("Helvetica", "B", 10)
+		pdf.CellFormat(labelW, 6, row[0], "", 0, "L", false, 0, "")
+		pdf.SetFont("Helvetica", "", 10)
+		pdf.CellFormat(valueW, 6, row[1], "", 0, "L", false, 0, "")
+		pdf.Ln(-1)
+	}
+
+	pdf.Ln(4)
+	pdf.SetDrawColor(200, 200, 200)
+	pdf.Line(10, pdf.GetY(), 200, pdf.GetY())
+	pdf.Ln(5)
+
+	// --- Game Sessions ---
+	pdf.SetFont("Helvetica", "B", 13)
+	pdf.Cell(0, 8, fmt.Sprintf("Riwayat Game (%d sesi)", len(sessions)))
+	pdf.Ln(10)
+
+	if len(sessions) == 0 {
+		pdf.SetFont("Helvetica", "", 10)
+		pdf.Cell(0, 6, "Belum ada sesi permainan.")
+	} else {
+		headers := []string{"#", "Tanggal", "Mode", "Level", "Waktu (s)", "VisuoSpatial", "Dexterity"}
+		colW := []float64{8, 35, 18, 14, 20, 28, 28}
+
+		pdf.SetFont("Helvetica", "B", 9)
+		pdf.SetFillColor(66, 133, 244)
+		pdf.SetTextColor(255, 255, 255)
+		for i, h := range headers {
+			pdf.CellFormat(colW[i], 7, h, "1", 0, "C", true, 0, "")
+		}
+		pdf.Ln(-1)
+
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetFont("Helvetica", "", 9)
+
+		// Compute summary
+		var bestFit float64
+		var totalTime float64
+		var maxLevel int
+
+		for i, s := range sessions {
+			if s.VisuoSpatialFit > bestFit {
+				bestFit = s.VisuoSpatialFit
+			}
+			totalTime += s.TotalTime
+			if s.LevelReached > maxLevel {
+				maxLevel = s.LevelReached
+			}
+
+			if i%2 == 0 {
+				pdf.SetFillColor(245, 245, 245)
+			} else {
+				pdf.SetFillColor(255, 255, 255)
+			}
+			row := []string{
+				fmt.Sprintf("%d", i+1),
+				s.CreatedAt.Format("02/01/2006 15:04"),
+				s.Mode,
+				fmt.Sprintf("%d", s.LevelReached),
+				fmt.Sprintf("%.1f", s.TotalTime),
+				fmt.Sprintf("%.2f", s.VisuoSpatialFit),
+				fmt.Sprintf("%.1f", s.DexterityScore),
+			}
+			for j, val := range row {
+				pdf.CellFormat(colW[j], 6, val, "1", 0, "C", true, 0, "")
+			}
+			pdf.Ln(-1)
+		}
+
+		// --- Summary ---
+		avgTime := totalTime / float64(len(sessions))
+		pdf.Ln(5)
+		pdf.SetFont("Helvetica", "B", 11)
+		pdf.Cell(0, 7, "Ringkasan Performa")
+		pdf.Ln(8)
+
+		pdf.SetFont("Helvetica", "", 10)
+		summary := [][]string{
+			{"Total Sesi", fmt.Sprintf("%d", len(sessions))},
+			{"Skor VisuoSpatial Terbaik", fmt.Sprintf("%.2f", bestFit)},
+			{"Level Tertinggi", fmt.Sprintf("%d", maxLevel)},
+			{"Rata-rata Waktu", fmt.Sprintf("%.1f detik", avgTime)},
+		}
+		for _, row := range summary {
+			pdf.SetFont("Helvetica", "B", 10)
+			pdf.CellFormat(60, 6, row[0], "", 0, "L", false, 0, "")
+			pdf.SetFont("Helvetica", "", 10)
+			pdf.CellFormat(40, 6, row[1], "", 0, "L", false, 0, "")
+			pdf.Ln(-1)
+		}
+	}
+
+	// --- Quiz Results ---
+	if len(quizzes) > 0 {
+		pdf.Ln(6)
+		pdf.SetDrawColor(200, 200, 200)
+		pdf.Line(10, pdf.GetY(), 200, pdf.GetY())
+		pdf.Ln(5)
+
+		pdf.SetFont("Helvetica", "B", 13)
+		pdf.Cell(0, 8, fmt.Sprintf("Hasil Quiz (%d)", len(quizzes)))
+		pdf.Ln(10)
+
+		qHeaders := []string{"#", "Tanggal", "Skor"}
+		qColW := []float64{10, 50, 30}
+
+		pdf.SetFont("Helvetica", "B", 9)
+		pdf.SetFillColor(66, 133, 244)
+		pdf.SetTextColor(255, 255, 255)
+		for i, h := range qHeaders {
+			pdf.CellFormat(qColW[i], 7, h, "1", 0, "C", true, 0, "")
+		}
+		pdf.Ln(-1)
+
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetFont("Helvetica", "", 9)
+		for i, q := range quizzes {
+			if i%2 == 0 {
+				pdf.SetFillColor(245, 245, 245)
+			} else {
+				pdf.SetFillColor(255, 255, 255)
+			}
+			pdf.CellFormat(qColW[0], 6, fmt.Sprintf("%d", i+1), "1", 0, "C", true, 0, "")
+			pdf.CellFormat(qColW[1], 6, q.CreatedAt.Format("02/01/2006 15:04"), "1", 0, "C", true, 0, "")
+			pdf.CellFormat(qColW[2], 6, fmt.Sprintf("%d", q.Score), "1", 0, "C", true, 0, "")
+			pdf.Ln(-1)
+		}
+	}
+
+	// --- Footer ---
+	pdf.Ln(10)
+	pdf.SetFont("Helvetica", "I", 8)
+	pdf.SetTextColor(150, 150, 150)
+	pdf.Cell(0, 5, fmt.Sprintf("Dicetak pada %s — OAMP OtakAtik-Robotics", participant.CreatedAt.Format("02 January 2006")))
+
+	var buf bytes.Buffer
+	if err := pdf.Output(&buf); err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to generate rapor")
+		return
+	}
+
+	safeName := sanitizeFilename(participant.Name)
+	filename := fmt.Sprintf("rapor-%s.pdf", safeName)
+	c.Header("Content-Type", "application/pdf")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	c.Data(http.StatusOK, "application/pdf", buf.Bytes())
+}
+
+var nonAlphaNum = regexp.MustCompile(`[^\w\-]`)
+
+func sanitizeFilename(name string) string {
+	s := strings.TrimSpace(name)
+	s = strings.ReplaceAll(s, " ", "-")
+	s = nonAlphaNum.ReplaceAllString(s, "")
+	return s
 }

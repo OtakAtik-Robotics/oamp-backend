@@ -30,7 +30,7 @@ type SessionPayload struct {
 func SubmitSession(c *gin.Context) {
 	var payload SessionPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		response.Error(c, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, response.FormatBindError(err))
 		return
 	}
 
@@ -83,7 +83,7 @@ type FaceLogBatch struct {
 func SubmitFaceLogs(c *gin.Context) {
 	var batch FaceLogBatch
 	if err := c.ShouldBindJSON(&batch); err != nil {
-		response.Error(c, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, response.FormatBindError(err))
 		return
 	}
 
