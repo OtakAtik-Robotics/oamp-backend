@@ -21,7 +21,9 @@ All responses follow the format:
 4. [Android App](#4-android-app)
 5. [Leaderboard](#5-leaderboard)
 6. [Export](#6-export)
-7. [Data Models](#7-data-models)
+7. [Event Batches](#7-event-batches)
+8. [AI Health Consultant](#8-ai-health-consultant)
+9. [Data Models](#9-data-models)
 
 ---
 
@@ -66,7 +68,7 @@ Register a new participant at the registration station.
   "uid": "RFID-001",
   "name": "Budi Santoso",
   "age": 10,
-  "grade": "5A",
+  "grade": "5",
   "gender": "male",
   "height": 135.5,
   "weight": 30.2,
@@ -81,8 +83,8 @@ Register a new participant at the registration station.
 |-------|-------|
 | `uid` | required, unique |
 | `name` | required |
-| `age` | required, 3-18 |
-| `grade` | required |
+| `age` | required, >= 3 |
+| `grade` | required, free text (e.g. "TK-A", "5", "SMP-2", "SMA-1", "Mahasiswa", "Umum") |
 | `gender` | required, one of: `male`, `female` |
 | `height` | required, > 0 |
 | `weight` | required, > 0 |
@@ -100,7 +102,7 @@ Register a new participant at the registration station.
     "uid": "RFID-001",
     "name": "Budi Santoso",
     "age": 10,
-    "grade": "5A",
+    "grade": "5",
     "gender": "male",
     "height": 135.5,
     "weight": 30.2,
@@ -116,7 +118,7 @@ Register a new participant at the registration station.
 ```json
 {
   "status": "error",
-  "message": "Key: 'Participant.Name' Error:Field validation for 'Name' failed on the 'required' tag",
+  "message": "Name is required; Age is required",
   "data": null
 }
 ```
@@ -140,7 +142,7 @@ Returns `height` so the robot can adjust its actuator.
     "uid": "RFID-001",
     "name": "Budi Santoso",
     "age": 10,
-    "grade": "5A",
+    "grade": "5",
     "gender": "male",
     "height": 135.5,
     "weight": 30.2,
@@ -302,7 +304,7 @@ Login for the Android app. Returns participant data and all their game sessions.
       "uid": "RFID-001",
       "name": "Budi Santoso",
       "age": 10,
-      "grade": "5A",
+      "grade": "5",
       "gender": "male",
       "height": 135.5,
       "weight": 30.2,
@@ -370,7 +372,20 @@ Submit a quiz result from the Android app.
 ### `GET /api/v1/leaderboard`
 
 CTF-style leaderboard. Returns top 10 participants based on their best game session.
-One entry per participant (uses `DISTINCT ON`), ranked by `visuo_spatial_fit` descending, then `total_time` ascending as tiebreaker.
+One entry per participant (uses PostgreSQL `DISTINCT ON`).
+
+**Score formula:**
+```
+score = (level_reached × 10) + (visuo_spatial_fit × 50) + (dexterity_score × 0.2)
+```
+
+| Metric | Weight | Contribution |
+|--------|--------|-------------|
+| `level_reached` (1-8) | ×10 | 10 - 80 points |
+| `visuo_spatial_fit` (0-1) | ×50 | 0 - 50 points |
+| `dexterity_score` (0-100) | ×0.2 | 0 - 20 points |
+
+Range: 10 - 150. Always positive. Level has highest weight but doesn't dominate.
 
 **Response `200`:**
 ```json
@@ -382,31 +397,77 @@ One entry per participant (uses `DISTINCT ON`), ranked by `visuo_spatial_fit` de
       "rank": 1,
       "participant_id": 1,
       "uid": "RFID-001",
-      "name": "Budi Santoso",
-      "grade": "5A",
-      "age": 10,
-      "visuo_spatial_fit": 0.91,
-      "total_time": 18.5,
-      "level_reached": 6,
-      "dexterity_score": 88.5
+      "name": "Dina Permata",
+      "grade": "6A",
+      "age": 11,
+      "visuo_spatial_fit": 0.95,
+      "total_time": 14.2,
+      "level_reached": 8,
+      "dexterity_score": 95.0,
+      "score": 145.5
     },
     {
       "rank": 2,
       "participant_id": 2,
       "uid": "RFID-002",
-      "name": "Ani Lestari",
-      "grade": "4B",
-      "age": 9,
-      "visuo_spatial_fit": 0.85,
-      "total_time": 22.3,
-      "level_reached": 5,
-      "dexterity_score": 82.0
+      "name": "Budi Santoso",
+      "grade": "5",
+      "age": 10,
+      "visuo_spatial_fit": 0.91,
+      "total_time": 18.5,
+      "level_reached": 6,
+      "dexterity_score": 88.5,
+      "score": 108.7
     }
   ]
 }
 ```
 
 Returns empty array `[]` when no sessions have been recorded yet.
+
+---
+
+### Error Responses (apply to all endpoints)
+
+**Response `429` (rate limited):**
+```json
+{
+  "status": "error",
+  "message": "Too many requests, please try again later",
+  "data": null
+}
+```
+
+Rate limit: 10 requests/sec per IP, burst of 30.
+
+**Response `413` (body too large):**
+Request body exceeds 2MB limit.
+
+### `GET /api/v1/leaderboard/timeline`
+
+Returns all game sessions ordered by time (max 200 entries). Used for timeline graph on the dashboard.
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Timeline fetched successfully",
+  "data": [
+    {
+      "name": "Budi Santoso",
+      "score": 108.7,
+      "created_at": "2026-04-12T10:10:00Z"
+    },
+    {
+      "name": "Ani Lestari",
+      "score": 92.5,
+      "created_at": "2026-04-12T10:15:00Z"
+    }
+  ]
+}
+```
+
+Each entry represents one game session (not unique per participant). The `score` uses the same formula as the leaderboard.
 
 ---
 
@@ -481,7 +542,124 @@ link.click();
 
 ---
 
-## 7. Data Models
+## 7. Event Batches
+
+### `GET /api/v1/batches`
+
+Returns all event batches (sessions) ordered by creation time (newest first).
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Batches fetched successfully",
+  "data": [
+    {
+      "id": 2,
+      "name": "Sesi Pameran Bandung 2026",
+      "is_active": true,
+      "created_at": "2026-04-15T19:12:24+07:00"
+    },
+    {
+      "id": 1,
+      "name": "Sesi Default",
+      "is_active": false,
+      "created_at": "2026-04-15T19:12:12+07:00"
+    }
+  ]
+}
+```
+
+---
+
+### `POST /api/v1/batches`
+
+Creates a new event batch and sets it as the active batch. All previously active batches are deactivated.
+
+Uses a database transaction to ensure atomicity.
+
+**Request:**
+```json
+{
+  "name": "Sesi Pameran Bandung 2026"
+}
+```
+
+**Validation rules:**
+| Field | Rules |
+|-------|-------|
+| `name` | required |
+
+**Response `201`:**
+```json
+{
+  "status": "success",
+  "message": "Batch created successfully",
+  "data": {
+    "id": 2,
+    "name": "Sesi Pameran Bandung 2026",
+    "is_active": true,
+    "created_at": "2026-04-15T19:12:24+07:00"
+  }
+}
+```
+
+---
+
+## 8. AI Health Consultant
+
+### `GET /api/v1/participants/analysis/{uid}`
+
+Generates an AI-powered health analysis for a participant using LLM. The analysis includes BMI calculation, average game performance, and personalized physical activity recommendations in Markdown format.
+
+**URL Parameters:**
+| Param | Type | Description |
+|-------|------|-------------|
+| `uid` | string | Participant UID (RFID tag / QR code) |
+
+**Data Aggregated:**
+- Participant biodata (age, gender, height, weight, heart_rate, spO2, grip_strength)
+- All game sessions for average visuo-spatial fit and dexterity score
+- BMI calculation: `Weight / ((Height/100)²)`
+
+**LLM Providers Supported:** OpenAI, Gemini, Claude, Minimax (configured via `AI_PROVIDER` env var).
+
+**Response `200` (success):**
+```json
+{
+  "status": "success",
+  "message": "Analysis generated",
+  "data": {
+    "analysis": "## Analisis Kesehatan\n\nBerdasarkan data yang diberikan untuk **Dina Permata (11 tahun)**:\n\n- **BMI**: 17.2 (Normal)\n- **Kekuatan Grip**: 15.2 kg\n\n### Saran Aktivitas Fisik:\n- **Latihan Motorik Kasar**: Berlari, melompat tali, bermain bola\n- **Latihan Motorik Halus**: Meronce, menyusun balok, menggambar\n- **Aktivitas Kardio**: Jalan cepat 15-20 menit"
+  }
+}
+```
+
+**Response `200` (fallback — AI service offline):**
+```json
+{
+  "status": "fallback",
+  "message": "AI service offline",
+  "data": {
+    "analysis": "Mohon maaf, layanan AI Health Analysis saat ini sedang sibuk atau tidak dapat diakses akibat gangguan jaringan. Silakan coba beberapa saat lagi."
+  }
+}
+```
+
+> Note: Both success and fallback return HTTP 200 OK. The `status` field differentiates them. This is intentional graceful degradation — the endpoint never crashes or returns 500 due to AI provider issues.
+
+**Response `404` (participant not found):**
+```json
+{
+  "status": "error",
+  "message": "Participant not found",
+  "data": null
+}
+```
+
+---
+
+## 9. Data Models
 
 ### Participant
 
@@ -490,8 +668,8 @@ link.click();
 | `id` | uint | Auto-generated primary key |
 | `uid` | string | Unique identifier (RFID tag / QR code) |
 | `name` | string | Full name |
-| `age` | int | Age in years (3-18) |
-| `grade` | string | School grade / class |
+| `age` | int | Age in years (>= 3) |
+| `grade` | string | Education level / class (e.g. "TK-A", "5", "SMP-2", "SMA-1", "Mahasiswa", "Umum") |
 | `gender` | string | `male` or `female` |
 | `height` | float | Height in cm |
 | `weight` | float | Weight in kg |
@@ -506,12 +684,22 @@ link.click();
 |-------|------|-------------|
 | `id` | uint | Auto-generated primary key |
 | `participant_id` | uint | Foreign key to Participant |
+| `event_batch_id` | uint | Foreign key to EventBatch (auto-assigned from active batch) |
 | `mode` | string | Game mode (e.g. "normal") |
 | `level_reached` | int | Highest level completed |
 | `total_time` | float | Total play time in seconds |
 | `cognitive_age` | int | Estimated cognitive age |
 | `visuo_spatial_fit` | float | Visuo-spatial fitness score |
 | `dexterity_score` | float | Dexterity score |
+| `created_at` | timestamp | Auto-set by GORM |
+
+### EventBatch
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | uint | Auto-generated primary key |
+| `name` | string | Batch/session name |
+| `is_active` | bool | Only one batch is active at a time |
 | `created_at` | timestamp | Auto-set by GORM |
 
 ### FaceExpressionLog

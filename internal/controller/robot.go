@@ -41,6 +41,18 @@ func SubmitSession(c *gin.Context) {
 		return
 	}
 
+	// Auto-assign EventBatchID: find active batch or create default
+	var batch model.EventBatch
+	if err := config.DB.Where("is_active = ?", true).First(&batch).Error; err != nil {
+		// No active batch, create default
+		batch = model.EventBatch{Name: "Sesi Default", IsActive: true}
+		if err := config.DB.Create(&batch).Error; err != nil {
+			response.Error(c, http.StatusInternalServerError, "Failed to create default event batch")
+			return
+		}
+	}
+	payload.Session.EventBatchID = batch.ID
+
 	tx := config.DB.Begin()
 
 	if err := tx.Create(&payload.Session).Error; err != nil {

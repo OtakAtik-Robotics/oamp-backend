@@ -23,16 +23,31 @@ func ConnectDB() {
 		log.Fatal("Database connection failed: ", err)
 	}
 
-	err = db.AutoMigrate(
+	// Migrate EventBatch first (no FK dependencies)
+	if err := db.AutoMigrate(&model.EventBatch{}); err != nil {
+		log.Fatal("Database migration failed: ", err)
+	}
+
+	// Create default batch if none exists
+	var count int64
+	db.Model(&model.EventBatch{}).Count(&count)
+	if count == 0 {
+		db.Create(&model.EventBatch{Name: "Sesi Default", IsActive: true})
+	}
+
+	// Migrate other models
+	if err := db.AutoMigrate(
 		&model.Participant{},
 		&model.GameSession{},
 		&model.FaceExpressionLog{},
 		&model.DatasetCapture{},
 		&model.QuizResult{},
-	)
-	if err != nil {
+	); err != nil {
 		log.Fatal("Database migration failed: ", err)
 	}
+
+	// Update existing game_sessions to use default batch (id=1) if needed
+	db.Model(&model.GameSession{}).Where("event_batch_id = 0").Update("event_batch_id", 1)
 
 	DB = db
 	fmt.Println("Database Connected and Migrated successfully")

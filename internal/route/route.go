@@ -1,6 +1,8 @@
 package route
 
 import (
+	"os"
+	"strings"
 	"oamp-backend/internal/controller"
 	"oamp-backend/internal/middleware"
 
@@ -9,12 +11,28 @@ import (
 )
 
 func SetupRoutes(r *gin.Engine) {
-	r.Use(cors.New(cors.Config{
-		AllowAllOrigins:  true,
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		AllowCredentials: true,
-	}))
+	// Configure CORS from environment
+	origins := os.Getenv("CORS_ORIGINS")
+	allowAll := origins == "*" || origins == ""
+
+	var corsConfig cors.Config
+	if allowAll {
+		corsConfig = cors.Config{
+			AllowAllOrigins:  true,
+			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+			AllowCredentials: true,
+		}
+	} else {
+		originList := strings.Split(origins, ",")
+		corsConfig = cors.Config{
+			AllowOrigins:     originList,
+			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+			AllowCredentials: true,
+		}
+	}
+	r.Use(cors.New(corsConfig))
 	r.Use(middleware.RateLimit())
 	r.Use(middleware.BodyLimit(2 * 1024 * 1024)) // 2 MB max body size
 
@@ -49,5 +67,12 @@ func SetupRoutes(r *gin.Engine) {
 		api.GET("/export/excel", controller.ExportExcel)
 		api.GET("/export/pdf", controller.ExportPDF)
 		api.GET("/export/rapor/:uid", controller.ExportRapor)
+
+		// Event Batch management
+		api.GET("/batches", controller.GetBatches)
+		api.POST("/batches", controller.CreateBatch)
+
+		// Participant analysis (AI Health Consultant)
+		api.GET("/participants/analysis/:uid", controller.GetParticipantAnalysis)
 	}
 }

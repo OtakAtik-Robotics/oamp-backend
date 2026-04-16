@@ -1,0 +1,26 @@
+Database Connected and Migrated successfully
+[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.
+
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /health                   --> oamp-backend/internal/controller.HealthCheck (6 handlers)
+[GIN-debug] POST   /api/v1/participants      --> oamp-backend/internal/controller.RegisterParticipant (6 handlers)
+[GIN-debug] GET    /api/v1/robot/auth/:uid   --> oamp-backend/internal/controller.RobotAuth (6 handlers)
+[GIN-debug] POST   /api/v1/robot/sessions    --> oamp-backend/internal/controller.SubmitSession (6 handlers)
+[GIN-debug] POST   /api/v1/robot/logs/face   --> oamp-backend/internal/controller.SubmitFaceLogs (6 handlers)
+[GIN-debug] GET    /api/v1/app/auth/:uid     --> oamp-backend/internal/controller.AppAuth (6 handlers)
+[GIN-debug] POST   /api/v1/app/quiz          --> oamp-backend/internal/controller.SubmitQuiz (6 handlers)
+[GIN-debug] GET    /api/v1/leaderboard       --> oamp-backend/internal/controller.GetLeaderboard (6 handlers)
+[GIN-debug] GET    /api/v1/leaderboard/timeline --> oamp-backend/internal/controller.GetLeaderboardTimeline (6 handlers)
+[GIN-debug] GET    /api/v1/export/excel      --> oamp-backend/internal/controller.ExportExcel (6 handlers)
+[GIN-debug] GET    /api/v1/export/pdf        --> oamp-backend/internal/controller.ExportPDF (6 handlers)
+[GIN-debug] GET    /api/v1/export/rapor/:uid --> oamp-backend/internal/controller.ExportRapor (6 handlers)
+[GIN-debug] GET    /api/v1/batches           --> oamp-backend/internal/controller.GetBatches (6 handlers)
+[GIN-debug] POST   /api/v1/batches           --> oamp-backend/internal/controller.CreateBatch (6 handlers)
+[GIN-debug] GET    /api/v1/participants/analysis/:uid --> oamp-backend/internal/controller.GetParticipantAnalysis (6 handlers)
+[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
+Please check https://github.com/gin-gonic/gin/blob/master/docs/doc.md#dont-trust-all-proxies for details.
+[GIN-debug] Listening and serving HTTP on :8080
+[GIN] 2026/04/16 - 00:10:23 | 200 |   30.05s |             ::1 | GET      "/api/v1/participants/analysis/RFID-001"
