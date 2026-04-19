@@ -14,6 +14,7 @@ type Participant struct {
 	HeartRate         int       `json:"heart_rate" binding:"omitempty,gte=40,lte=220"`
 	SpO2              float64   `json:"spo2" binding:"omitempty,gte=0,lte=100"`
 	GripStrength      float64   `json:"grip_strength" binding:"omitempty,gte=0"`
+	IsPremium         bool      `json:"is_premium" gorm:"default:false"`
 	AiAnalysis        string    `json:"ai_analysis" gorm:"type:text"`
 	AiAnalysisUpdatedAt *time.Time `json:"ai_analysis_updated_at"`
 	CreatedAt         time.Time `json:"created_at"`

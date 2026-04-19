@@ -1,6 +1,8 @@
 # OAMP Backend
 
-REST API server for the OtakAtik-Robotics cognitive measurement platform. Handles participant registration, robot game sessions, leaderboard with CTF-style scoring, AI health analysis, quiz, and report exports (Excel/PDF).
+REST API server for the OtakAtik-Robotics cognitive measurement platform. Handles participant registration, Midtrans payment, robot game sessions, leaderboard with CTF-style scoring, AI health analysis, quiz, and report exports (Excel/PDF).
+
+**Pay-first model:** Participants must complete payment before accessing robot sessions and AI analysis. Targets all ages: TK, SD, SMP, SMA, Mahasiswa, Umum (age 3+).
 
 ## Tech Stack
 
@@ -13,6 +15,8 @@ REST API server for the OtakAtik-Robotics cognitive measurement platform. Handle
 | AI | Multi-Provider LLM (OpenAI, Gemini, Claude, Minimax) |
 | Export | excelize (Excel), gofpdf (PDF) |
 | Security | golang.org/x/time (rate limiting), go-playground/validator |
+| Payment | Midtrans Snap (Sandbox) |
+| Notifications | Telegram Bot API |
 
 ## Project Structure
 
@@ -31,6 +35,7 @@ internal/
     export.go                     # Excel, PDF, per-participant rapor
     batches.go                    # GET/POST /api/v1/batches (event batch management)
     analysis.go                   # GET /api/v1/participants/analysis/{uid} (AI)
+    payment.go                    # Midtrans checkout, webhook, simulate
     health.go                     # GET /health
   model/model.go                  # GORM models: Participant, GameSession, EventBatch, etc.
   route/route.go                  # Route definitions, CORS, middleware registration
@@ -100,6 +105,14 @@ go build -o bin/server ./cmd/api
 | `DB_PORT` | Database port | `5432` |
 | `PORT` | Server listen port | `8080` |
 
+### Payment (required for checkout)
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `MIDTRANS_SERVER_KEY` | Midtrans Sandbox server key | `SB-Mid-server-xxxxx` |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token for payment alerts | `123456:ABC-DEF-...` |
+| `TELEGRAM_CHAT_ID` | Telegram chat ID for notifications | `-1001234567890` |
+
 ### AI Provider (required for health analysis)
 
 | Variable | Description | Options |
@@ -164,6 +177,9 @@ Full API reference: [API.md](API.md)
 - **Graceful degradation:** AI analysis endpoint returns HTTP 200 with fallback message on provider failure (never crashes, never 500).
 - **CORS:** AllowAllOrigins enabled (suitable for internal network; restrict to specific origins before production deployment).
 - **Database transactions:** Game session submission uses `tx.Begin()` with rollback on any failure.
+- **Webhook signature validation:** Midtrans notifications verified via SHA512 before processing. Spoofed webhooks rejected with HTTP 401.
+- **Payment gate:** Robot sessions and AI analysis require `is_premium = true`. Unpaid participants get HTTP 403.
+- **Telegram alerts:** Real-time payment notifications sent async on successful settlement/capture.
 
 ---
 

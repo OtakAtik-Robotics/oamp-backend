@@ -41,6 +41,11 @@ func SubmitSession(c *gin.Context) {
 		return
 	}
 
+	if !participant.IsPremium {
+		response.Error(c, http.StatusForbidden, "Pay first")
+		return
+	}
+
 	// Auto-assign EventBatchID: find active batch or create default
 	var batch model.EventBatch
 	if err := config.DB.Where("is_active = ?", true).First(&batch).Error; err != nil {

@@ -27,6 +27,16 @@ func GetParticipantAnalysis(c *gin.Context) {
 		return
 	}
 
+	// Check premium status
+	if !participant.IsPremium {
+		c.JSON(http.StatusForbidden, gin.H{
+			"status":  "error",
+			"message": "Pay first",
+			"data":    nil,
+		})
+		return
+	}
+
 	// Return cached analysis if exists
 	if participant.AiAnalysis != "" {
 		c.JSON(http.StatusOK, gin.H{

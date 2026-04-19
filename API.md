@@ -17,13 +17,14 @@ All responses follow the format:
 
 1. [Health Check](#1-health-check)
 2. [Participants](#2-participants)
-3. [Robot](#3-robot)
-4. [Android App](#4-android-app)
-5. [Leaderboard](#5-leaderboard)
-6. [Export](#6-export)
-7. [Event Batches](#7-event-batches)
-8. [AI Health Consultant](#8-ai-health-consultant)
-9. [Data Models](#9-data-models)
+3. [Payment](#3-payment)
+4. [Robot](#4-robot)
+5. [Android App](#5-android-app)
+6. [Leaderboard](#6-leaderboard)
+7. [Export](#7-export)
+8. [Event Batches](#8-event-batches)
+9. [AI Health Consultant](#9-ai-health-consultant)
+10. [Data Models](#10-data-models)
 
 ---
 
@@ -125,7 +126,110 @@ Register a new participant at the registration station.
 
 ---
 
-## 3. Robot
+## 3. Payment
+
+### `POST /api/v1/payment/checkout/{uid}`
+
+Create a Midtrans Snap transaction. Returns a `snap_token` to render the payment popup and a `redirect_url` for direct payment page.
+
+**URL Parameters:**
+| Param | Type | Description |
+|-------|------|-------------|
+| `uid` | string | Participant UID (RFID tag / QR code) |
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Checkout initiated",
+  "data": {
+    "token": "snap_token_string",
+    "redirect_url": "https://app.sandbox.midtrans.com/snap/v2/vtweb/...",
+    "order_id": "OAMP-RFID-001-1713500000000000000",
+    "amount": 10000,
+    "currency": "IDR"
+  }
+}
+```
+
+**Response `404`:**
+```json
+{
+  "status": "error",
+  "message": "Participant not found",
+  "data": null
+}
+```
+
+**Response `503`:**
+```json
+{
+  "status": "error",
+  "message": "Payment service not configured",
+  "data": null
+}
+```
+
+---
+
+### `POST /api/v1/payment/webhook`
+
+Midtrans payment notification webhook. Validates SHA512 signature before processing. Always returns HTTP 200 (per Midtrans spec).
+
+**Signature validation:** `SHA512(order_id + status_code + gross_amount + MIDTRANS_SERVER_KEY)` must match `signature_key` field.
+
+**Response `401` (invalid signature):**
+```json
+{
+  "status": "invalid signature"
+}
+```
+
+**Response `200` (accepted):**
+```json
+{
+  "status": "ok"
+}
+```
+
+On successful payment (`transaction_status` = `settlement` or `capture`), sets `is_premium = true` on the participant and sends a Telegram notification.
+
+---
+
+### `POST /api/v1/payment/simulate-success/{uid}`
+
+Internal test endpoint. Directly sets `is_premium = true` without real payment. Sends Telegram notification.
+
+**URL Parameters:**
+| Param | Type | Description |
+|-------|------|-------------|
+| `uid` | string | Participant UID |
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Payment successful",
+  "data": {
+    "uid": "RFID-001",
+    "is_premium": true,
+    "paid_at": "2026-04-19T13:45:00Z"
+  }
+}
+```
+
+**Response `404`:**
+```json
+{
+  "status": "error",
+  "message": "Participant not found",
+  "data": null
+}
+```
+
+---
+
+## 4. Robot
 
 ### `GET /api/v1/robot/auth/{uid}`
 
@@ -239,6 +343,15 @@ Uses a database transaction to atomically create the session, face expression lo
 }
 ```
 
+**Response `403` (not premium):**
+```json
+{
+  "status": "error",
+  "message": "Pay first",
+  "data": null
+}
+```
+
 ---
 
 ### `POST /api/v1/robot/logs/face`
@@ -287,7 +400,7 @@ Useful for sending additional logs after the session has been recorded.
 
 ---
 
-## 4. Android App
+## 5. Android App
 
 ### `GET /api/v1/app/auth/{uid}`
 
@@ -367,7 +480,7 @@ Submit a quiz result from the Android app.
 
 ---
 
-## 5. Leaderboard
+## 6. Leaderboard
 
 ### `GET /api/v1/leaderboard`
 
@@ -471,7 +584,7 @@ Each entry represents one game session (not unique per participant). The `score`
 
 ---
 
-## 6. Export
+## 7. Export
 
 ### `GET /api/v1/export/excel`
 
@@ -542,7 +655,7 @@ link.click();
 
 ---
 
-## 7. Event Batches
+## 8. Event Batches
 
 ### `GET /api/v1/batches`
 
@@ -606,7 +719,7 @@ Uses a database transaction to ensure atomicity.
 
 ---
 
-## 8. AI Health Consultant
+## 9. AI Health Consultant
 
 ### `GET /api/v1/participants/analysis/{uid}`
 
@@ -648,6 +761,15 @@ Generates an AI-powered health analysis for a participant using LLM. The analysi
 
 > Note: Both success and fallback return HTTP 200 OK. The `status` field differentiates them. This is intentional graceful degradation — the endpoint never crashes or returns 500 due to AI provider issues.
 
+**Response `403` (not premium):**
+```json
+{
+  "status": "error",
+  "message": "Pay first",
+  "data": null
+}
+```
+
 **Response `404` (participant not found):**
 ```json
 {
@@ -659,7 +781,7 @@ Generates an AI-powered health analysis for a participant using LLM. The analysi
 
 ---
 
-## 9. Data Models
+## 10. Data Models
 
 ### Participant
 
@@ -676,6 +798,7 @@ Generates an AI-powered health analysis for a participant using LLM. The analysi
 | `heart_rate` | int | Resting heart rate (bpm) |
 | `spo2` | float | Blood oxygen saturation (%) |
 | `grip_strength` | float | Grip strength measurement |
+| `is_premium` | bool | Premium access (default: false) |
 | `created_at` | timestamp | Auto-set by GORM |
 
 ### GameSession

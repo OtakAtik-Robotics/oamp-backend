@@ -72,7 +72,12 @@ func SetupRoutes(r *gin.Engine) {
 		api.GET("/batches", controller.GetBatches)
 		api.POST("/batches", controller.CreateBatch)
 
-		// Participant analysis (AI Health Consultant)
+		// Payment (Midtrans Snap)
+		api.POST("/payment/checkout/:uid", controller.Checkout)
+		api.POST("/payment/webhook", controller.PaymentWebhook)
+		api.POST("/payment/simulate-success/:uid", controller.SimulatePaymentSuccess)
+
+		// Participant analysis (AI Health Consultant, premium-gated)
 		api.GET("/participants/analysis/:uid", controller.GetParticipantAnalysis)
 	}
 }
