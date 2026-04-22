@@ -5,6 +5,7 @@ import (
 	"log"
 	"oamp-backend/internal/model"
 	"os"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -50,5 +51,15 @@ func ConnectDB() {
 	db.Model(&model.GameSession{}).Where("event_batch_id = 0").Update("event_batch_id", 1)
 
 	DB = db
+
+	// Connection pool
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatal("Failed to get underlying sql.DB: ", err)
+	}
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+
 	fmt.Println("Database Connected and Migrated successfully")
 }

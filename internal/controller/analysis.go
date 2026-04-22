@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 	"oamp-backend/internal/config"
@@ -115,10 +116,12 @@ Ikuti format output yang sudah ditentukan di system prompt. Maksimal 150 kata.`,
 
 	// Save analysis to cache
 	now := time.Now()
-	config.DB.Model(&participant).Updates(map[string]interface{}{
+	if err := config.DB.Model(&participant).Updates(map[string]interface{}{
 		"ai_analysis":            analysis,
 		"ai_analysis_updated_at": &now,
-	})
+	}).Error; err != nil {
+		log.Printf("[analysis] failed to cache analysis for participant %d: %v", participant.ID, err)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",

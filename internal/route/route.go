@@ -43,6 +43,7 @@ func SetupRoutes(r *gin.Engine) {
 	{
 		// Participant registration
 		api.POST("/participants", controller.RegisterParticipant)
+		api.GET("/participants", controller.GetParticipants)
 
 		// Robot endpoints
 		robot := api.Group("/robot")

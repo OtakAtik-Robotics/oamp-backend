@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,15 +20,17 @@ import (
 	"oamp-backend/pkg/response"
 )
 
-var midtransServerKey string
+var (
+	midtransServerKey string
+	midtransOnce      sync.Once
+)
 
 func initMidtrans() {
-	if midtransServerKey != "" {
-		return
-	}
-	midtransServerKey = os.Getenv("MIDTRANS_SERVER_KEY")
-	// Suppress debug/info logs that leak Auth header (Base64 Server Key)
-	midtrans.DefaultLoggerLevel = &midtrans.LoggerImplementation{LogLevel: midtrans.LogError}
+	midtransOnce.Do(func() {
+		midtransServerKey = os.Getenv("MIDTRANS_SERVER_KEY")
+		// Suppress debug/info logs that leak Auth header (Base64 Server Key)
+		midtrans.DefaultLoggerLevel = &midtrans.LoggerImplementation{LogLevel: midtrans.LogError}
+	})
 }
 
 func Checkout(c *gin.Context) {
@@ -97,9 +100,7 @@ func PaymentWebhook(c *gin.Context) {
 		return
 	}
 
-	hash := sha512.Sum512([]byte(orderID + statusCode + grossAmount + midtransServerKey))
-	calculated := fmt.Sprintf("%x", hash)
-	if calculated != signatureKey {
+	if !verifySignature(orderID, statusCode, grossAmount, signatureKey) {
 		c.JSON(http.StatusUnauthorized, gin.H{"status": "invalid signature"})
 		return
 	}
@@ -119,8 +120,14 @@ func PaymentWebhook(c *gin.Context) {
 			if lastIdx > 0 {
 				uid = uid[:lastIdx]
 			}
-			config.DB.Model(&model.Participant{}).Where("uid = ?", uid).Update("is_premium", true)
-			go sendTelegramNotification(uid)
+			if config.DB != nil {
+				result := config.DB.Model(&model.Participant{}).Where("uid = ?", uid).Update("is_premium", true)
+				if result.Error != nil {
+					log.Printf("[webhook] failed to update premium status for %s: %v", uid, result.Error)
+				} else {
+					go sendTelegramNotification(uid)
+				}
+			}
 		}
 	}
 
@@ -170,4 +177,9 @@ func SimulatePaymentSuccess(c *gin.Context) {
 		"is_premium": true,
 		"paid_at":    time.Now(),
 	})
+}
+
+func verifySignature(orderID, statusCode, grossAmount, signatureKey string) bool {
+	hash := sha512.Sum512([]byte(orderID + statusCode + grossAmount + midtransServerKey))
+	return fmt.Sprintf("%x", hash) == signatureKey
 }
