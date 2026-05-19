@@ -13,7 +13,7 @@ func TestParticipant_IsPremium_DefaultFalse(t *testing.T) {
 
 func TestParticipant_Fields(t *testing.T) {
 	p := Participant{
-		UID:          "RFID-001",
+		UID:          "BCR-001",
 		Name:         "Test User",
 		Age:          10,
 		Grade:        "5",
@@ -25,8 +25,8 @@ func TestParticipant_Fields(t *testing.T) {
 		GripStrength: 12.3,
 	}
 
-	if p.UID != "RFID-001" {
-		t.Errorf("expected UID RFID-001, got %s", p.UID)
+	if p.UID != "BCR-001" {
+		t.Errorf("expected UID BCR-001, got %s", p.UID)
 	}
 	if p.Age != 10 {
 		t.Errorf("expected Age 10, got %d", p.Age)

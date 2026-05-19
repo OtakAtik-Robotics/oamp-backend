@@ -5,6 +5,7 @@ import (
 	"strings"
 	"oamp-backend/internal/controller"
 	"oamp-backend/internal/middleware"
+	"oamp-backend/internal/websocket"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -39,11 +40,16 @@ func SetupRoutes(r *gin.Engine) {
 	// Health check
 	r.GET("/health", controller.HealthCheck)
 
+	// WebSocket — outside API group (no body limit, no rate limit)
+	wsManager := websocket.NewManager()
+	r.GET("/ws/match/:room_id", websocket.HandleWebSocket(wsManager))
+
 	api := r.Group("/api/v1")
 	{
 		// Participant registration
 		api.POST("/participants", controller.RegisterParticipant)
 		api.GET("/participants", controller.GetParticipants)
+		api.GET("/participants/id/:id", controller.GetParticipantByID)
 
 		// Robot endpoints
 		robot := api.Group("/robot")
@@ -77,6 +83,24 @@ func SetupRoutes(r *gin.Engine) {
 		api.POST("/payment/checkout/:uid", controller.Checkout)
 		api.POST("/payment/webhook", controller.PaymentWebhook)
 		api.POST("/payment/simulate-success/:uid", controller.SimulatePaymentSuccess)
+
+		// Pure game endpoint (oamp-game client, no face/emotion data)
+		api.POST("/game/submit", controller.SubmitPureGame)
+
+		// 1v1 Match rooms (Next.js migration — in-memory room manager)
+		api.GET("/rooms", controller.GetRooms)
+		api.POST("/rooms", controller.CreateRoom)
+		api.GET("/rooms/:code", controller.GetRoom)
+		api.POST("/rooms/:code/join", controller.JoinRoom)
+		api.POST("/rooms/:code/leave", controller.LeaveRoom)
+		api.POST("/rooms/:code/ready", controller.SetReady)
+
+		// Ranking & stats (Next.js migration)
+		api.GET("/ranking", controller.GetRanking)
+		api.GET("/stats", controller.GetStats)
+
+		// Game event (desktop app — join_room, level_start, level_complete, leave_room)
+		api.POST("/game/event", controller.GameEvent)
 
 		// Participant analysis (AI Health Consultant, premium-gated)
 		api.GET("/participants/analysis/:uid", controller.GetParticipantAnalysis)

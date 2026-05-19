@@ -65,3 +65,27 @@ type QuizResult struct {
 	AnswersData   string    `json:"answers_data" gorm:"type:text"`
 	CreatedAt     time.Time `json:"created_at"`
 }
+
+type PureGameResult struct {
+	ID                  uint      `json:"id" gorm:"primaryKey"`
+	ParticipantID       uint      `json:"participant_id" binding:"required" gorm:"not null"`
+	GameScore           int       `json:"game_score" binding:"required,gte=0"`
+	BlocksHit           int       `json:"blocks_hit" binding:"gte=0"`
+	HandTrackingStatus  string    `json:"hand_tracking_status" gorm:"size:20"`
+	PlayDuration        float64   `json:"play_duration" binding:"gte=0"`
+	Timestamp           time.Time `json:"timestamp"`
+	CreatedAt           time.Time `json:"created_at"`
+}
+
+// 1v1 Match Room (stored in Go memory, not DB — managed via WebSocket)
+// Fields track room state for matchmaking
+
+type MatchRoom struct {
+	ID            string    `json:"id" gorm:"primaryKey"` // 4-char code e.g. "ABCD"
+	Status        string    `json:"status"`               // waiting, ready, playing
+	Player1Name   string    `json:"player1_name"`
+	Player2Name   string    `json:"player2_name"`
+	Player1Ready  bool      `json:"player1_ready"`
+	Player2Ready  bool      `json:"player2_ready"`
+	LastActivity  time.Time `json:"last_activity"`
+}

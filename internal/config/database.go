@@ -43,6 +43,7 @@ func ConnectDB() {
 		&model.FaceExpressionLog{},
 		&model.DatasetCapture{},
 		&model.QuizResult{},
+		&model.PureGameResult{},
 	); err != nil {
 		log.Fatal("Database migration failed: ", err)
 	}

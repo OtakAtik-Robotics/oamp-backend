@@ -1,6 +1,6 @@
 # API Reference — OAMP Backend
 
-Base URL: `http://localhost:8080/api/v1`
+Base URL: `https://api.projectidek.dev/api/v1`
 
 All responses follow the format:
 ```json
@@ -24,7 +24,12 @@ All responses follow the format:
 7. [Export](#7-export)
 8. [Event Batches](#8-event-batches)
 9. [AI Health Consultant](#9-ai-health-consultant)
-10. [Data Models](#10-data-models)
+10. [1v1 Match Rooms](#10-1v1-match-rooms)
+11. [Ranking & Stats](#11-ranking--stats)
+12. [Game Event](#12-game-event)
+13. [WebSocket 1v1 Match](#13-websocket-1v1-match)
+14. [Data Models](#14-data-models)
+15. [Game Client (oamp-game Desktop App)](#15-game-client-oamp-game-desktop-app)
 
 ---
 
@@ -66,7 +71,7 @@ Register a new participant at the registration station.
 **Request:**
 ```json
 {
-  "uid": "RFID-001",
+  "uid": "BCR-001",
   "name": "Budi Santoso",
   "age": 10,
   "grade": "5",
@@ -100,7 +105,7 @@ Register a new participant at the registration station.
   "message": "Participant registered successfully",
   "data": {
     "id": 1,
-    "uid": "RFID-001",
+    "uid": "BCR-001",
     "name": "Budi Santoso",
     "age": 10,
     "grade": "5",
@@ -135,7 +140,7 @@ Create a Midtrans Snap transaction. Returns a `snap_token` to render the payment
 **URL Parameters:**
 | Param | Type | Description |
 |-------|------|-------------|
-| `uid` | string | Participant UID (RFID tag / QR code) |
+| `uid` | string | Participant UID (barcode identifier) |
 
 **Response `200`:**
 ```json
@@ -145,7 +150,7 @@ Create a Midtrans Snap transaction. Returns a `snap_token` to render the payment
   "data": {
     "token": "snap_token_string",
     "redirect_url": "https://app.sandbox.midtrans.com/snap/v2/vtweb/...",
-    "order_id": "OAMP-RFID-001-1713500000000000000",
+    "order_id": "OAMP-BCR-001-1713500000000000000",
     "amount": 10000,
     "currency": "IDR"
   }
@@ -211,7 +216,7 @@ Internal test endpoint. Directly sets `is_premium = true` without real payment. 
   "status": "success",
   "message": "Payment successful",
   "data": {
-    "uid": "RFID-001",
+    "uid": "BCR-001",
     "is_premium": true,
     "paid_at": "2026-04-19T13:45:00Z"
   }
@@ -233,7 +238,7 @@ Internal test endpoint. Directly sets `is_premium = true` without real payment. 
 
 ### `GET /api/v1/robot/auth/{uid}`
 
-Robot looks up a participant by UID (RFID/QR) for height calibration.
+Robot looks up a participant by UID (barcode) for height calibration.
 Returns `height` so the robot can adjust its actuator.
 
 **Response `200`:**
@@ -243,7 +248,7 @@ Returns `height` so the robot can adjust its actuator.
   "message": "Participant found",
   "data": {
     "id": 1,
-    "uid": "RFID-001",
+    "uid": "BCR-001",
     "name": "Budi Santoso",
     "age": 10,
     "grade": "5",
@@ -414,7 +419,7 @@ Login for the Android app. Returns participant data and all their game sessions.
   "data": {
     "participant": {
       "id": 1,
-      "uid": "RFID-001",
+      "uid": "BCR-001",
       "name": "Budi Santoso",
       "age": 10,
       "grade": "5",
@@ -509,7 +514,7 @@ Range: 10 - 150. Always positive. Level has highest weight but doesn't dominate.
     {
       "rank": 1,
       "participant_id": 1,
-      "uid": "RFID-001",
+      "uid": "BCR-001",
       "name": "Dina Permata",
       "grade": "6A",
       "age": 11,
@@ -522,7 +527,7 @@ Range: 10 - 150. Always positive. Level has highest weight but doesn't dominate.
     {
       "rank": 2,
       "participant_id": 2,
-      "uid": "RFID-002",
+      "uid": "BCR-002",
       "name": "Budi Santoso",
       "grade": "5",
       "age": 10,
@@ -617,7 +622,7 @@ Downloads a PDF rapor (report card) for an individual participant.
 **URL parameters:**
 | Param | Type | Description |
 |-------|------|-------------|
-| `uid` | string | Participant UID (RFID tag / QR code) |
+| `uid` | string | Participant UID (barcode identifier) |
 
 **Response `200`:** Binary `.pdf` file (`Content-Disposition: attachment; filename=rapor-{name}.pdf`)
 
@@ -723,12 +728,12 @@ Uses a database transaction to ensure atomicity.
 
 ### `GET /api/v1/participants/analysis/{uid}`
 
-Generates an AI-powered health analysis for a participant using LLM. The analysis includes BMI calculation, average game performance, and personalized physical activity recommendations in Markdown format.
+Generates an AI-powered health analysis for a participant using LLM. BMI calculation, average game performance, personalized physical activity recommendations in Markdown format. Premium-gated (`is_premium = true` required).
 
 **URL Parameters:**
 | Param | Type | Description |
 |-------|------|-------------|
-| `uid` | string | Participant UID (RFID tag / QR code) |
+| `uid` | string | Participant UID (barcode identifier) |
 
 **Data Aggregated:**
 - Participant biodata (age, gender, height, weight, heart_rate, spO2, grip_strength)
@@ -781,14 +786,260 @@ Generates an AI-powered health analysis for a participant using LLM. The analysi
 
 ---
 
-## 10. Data Models
+## 10. 1v1 Match Rooms
+
+In-memory room manager for real-time 1v1 matches. Rooms auto-cleanup after 5 minutes of inactivity.
+
+### `GET /api/v1/rooms`
+
+List all active rooms (status: `waiting` or `ready`).
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Rooms fetched",
+  "data": [
+    {
+      "id": "AB12",
+      "status": "waiting",
+      "player1_name": "Budi",
+      "player2_name": "",
+      "player1_ready": false,
+      "player2_ready": false,
+      "last_activity": "2026-05-12T10:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### `POST /api/v1/rooms`
+
+Create a new room. Player 1 is assigned a 4-char room code (e.g. `AB12`).
+
+**Request:**
+```json
+{ "player_name": "Budi" }
+```
+
+**Response `201`:**
+```json
+{
+  "status": "success",
+  "message": "Room created",
+  "data": {
+    "id": "AB12",
+    "status": "waiting",
+    "player1_name": "Budi",
+    "player2_name": "",
+    "player1_ready": false,
+    "player2_ready": false,
+    "last_activity": "2026-05-12T10:00:00Z"
+  }
+}
+```
+
+---
+
+### `GET /api/v1/rooms/{code}`
+
+Get room details by code.
+
+**Response `404`:**
+```json
+{ "status": "error", "message": "Room not found", "data": null }
+```
+
+---
+
+### `POST /api/v1/rooms/{code}/join`
+
+Join an existing room as Player 2.
+
+**Request:**
+```json
+{ "player_name": "Ani" }
+```
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Joined room",
+  "data": {
+    "id": "AB12",
+    "status": "ready",
+    "player1_name": "Budi",
+    "player2_name": "Ani",
+    "player1_ready": false,
+    "player2_ready": false
+  }
+}
+```
+
+**Response `409` (room full or already player1):**
+```json
+{ "status": "error", "message": "Room is full", "data": null }
+```
+
+---
+
+### `POST /api/v1/rooms/{code}/leave`
+
+Leave a room. If Player 1 leaves and Player 2 exists, Player 2 is promoted to Player 1.
+
+**Request:**
+```json
+{ "player_name": "Ani" }
+```
+
+**Response `200`:**
+```json
+{ "status": "success", "message": "Left room", "data": { "ok": true } }
+```
+
+---
+
+### `POST /api/v1/rooms/{code}/ready`
+
+Mark a player as ready. When both players are ready, room status changes to `playing`.
+
+**Request:**
+```json
+{ "player_name": "Budi" }
+```
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Ready set",
+  "data": {
+    "id": "AB12",
+    "status": "playing",
+    "player1_name": "Budi",
+    "player2_name": "Ani",
+    "player1_ready": true,
+    "player2_ready": true
+  }
+}
+```
+
+---
+
+## 11. Ranking & Stats
+
+### `GET /api/v1/ranking`
+
+CTF-style leaderboard. Returns top participants with `ai_analysis` present.
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Ranking fetched",
+  "data": [
+    { "rank": 1, "uid": "BCR-001", "name": "Dina", "age": 11, "task_avg": 0.85, "cognitive_age": 14 }
+  ]
+}
+```
+
+---
+
+### `GET /api/v1/stats`
+
+Aggregate statistics across all participants.
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Stats fetched",
+  "data": {
+    "total_participants": 42,
+    "avg_time": 0,
+    "min_time": 0,
+    "max_time": 0,
+    "avg_cognitive_age": 10.5,
+    "avg_visuo_spatial": 0
+  }
+}
+```
+
+---
+
+## 12. Game Event
+
+### `POST /api/v1/game/event`
+
+Desktop app game event notifications. Handles `join_room` and `leave_room` types.
+
+**Request:**
+```json
+{
+  "type": "join_room",
+  "room_id": "AB12",
+  "player_name": "Budi"
+}
+```
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Event processed",
+  "data": { "ok": true }
+}
+```
+
+---
+
+## 13. WebSocket 1v1 Match
+
+Real-time score broadcasting and GAME_OVER persistence for 1v1 matches.
+
+### `WS /ws/match/{room_id}?role={player|spectator}&player_id={id}`
+
+**Connection:**
+```
+# Player
+ws://localhost:8080/ws/match/AB12?role=player&player_id=P1
+
+# Spectator
+ws://localhost:8080/ws/match/AB12?role=spectator&player_id=S1
+```
+
+**Player → Spectator (score broadcast):**
+```json
+{ "game_score": 85, "blocks_hit": 12 }
+```
+
+**Player → All (GAME_OVER, persisted to DB):**
+```json
+{ "type": "GAME_OVER", "game_score": 95, "blocks_hit": 15, "play_duration": 42.5 }
+```
+
+**Server → Spectator (join/score/leave):**
+```json
+{ "type": "join", "player_id": "P1" }
+{ "type": "score_update", "player_id": "P1", "game_score": 85, "blocks_hit": 12 }
+{ "type": "GAME_OVER", "player_id": "P1", "game_score": 95, "blocks_hit": 15 }
+```
+
+**Rules:** Max 2 players, unlimited spectators. Both players finish → room destroyed. 5-min stale cleanup.
+
+---
+
+## 14. Data Models
 
 ### Participant
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | uint | Auto-generated primary key |
-| `uid` | string | Unique identifier (RFID tag / QR code) |
+| `uid` | string | Unique identifier (barcode) |
 | `name` | string | Full name |
 | `age` | int | Age in years (>= 3) |
 | `grade` | string | Education level / class (e.g. "TK-A", "5", "SMP-2", "SMA-1", "Mahasiswa", "Umum") |
@@ -854,3 +1105,408 @@ Generates an AI-powered health analysis for a participant using LLM. The analysi
 | `score` | int | Quiz score |
 | `answers_data` | string | JSON string of answers |
 | `created_at` | timestamp | Auto-set by GORM |
+
+### PureGameResult
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | uint | Auto-generated primary key |
+| `participant_id` | uint | Foreign key to Participant |
+| `game_score` | int | Final score from game (WS GAME_OVER) |
+| `blocks_hit` | int | Total blocks hit |
+| `hand_tracking_status` | string | Hand tracking state (e.g. "active") |
+| `play_duration` | float | Play duration in seconds |
+| `timestamp` | timestamp | Game timestamp |
+| `created_at` | timestamp | Auto-set by GORM |
+
+---
+
+## 15. Game Client (oamp-game Desktop App)
+
+The desktop game client (`oamp-game`) communicates with the backend via HTTP + WebSocket. Designed for offline-first operation — submissions are buffered in SQLite when server is unreachable and synced automatically.
+
+### 15.1 Authentication
+
+#### `GET /api/v1/app/auth/{uid}`
+
+Login by RFID UID (barcode). Returns participant data.
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Login successful",
+  "data": {
+    "participant": {
+      "id": 1,
+      "uid": "BCR-001",
+      "name": "Budi Santoso",
+      "age": 10,
+      "grade": "5",
+      "gender": "male",
+      "height": 135.5,
+      "weight": 30.2,
+      "is_premium": true,
+      "created_at": "2026-04-12T10:00:00Z"
+    },
+    "sessions": [...]
+  }
+}
+```
+
+**Response `404`:**
+```json
+{ "status": "error", "message": "Participant not found", "data": null }
+```
+
+---
+
+### 15.2 Participant Lookup by ID
+
+#### `GET /api/v1/participants/id/{id}`
+
+Lookup participant by numeric database ID.
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "",
+  "data": {
+    "id": 1,
+    "uid": "BCR-001",
+    "name": "Budi Santoso",
+    "age": 10,
+    "grade": "5",
+    "gender": "male",
+    "height": 135.5,
+    "weight": 30.2,
+    "is_premium": true,
+    "created_at": "2026-04-12T10:00:00Z"
+  }
+}
+```
+
+**Response `404`:**
+```json
+{ "status": "error", "message": "Participant not found", "data": null }
+```
+
+---
+
+### 15.3 Submit Game Session
+
+#### `POST /api/v1/game/submit`
+
+Submit pure game metrics after a session completes. No face/voice/emotion data — only gameplay metrics.
+
+**Request:**
+```json
+{
+  "participant_id": 1,
+  "game_score": 85,
+  "blocks_hit": 12,
+  "hand_tracking_status": "active",
+  "play_duration": 42.5,
+  "timestamp": "2026-05-13T10:05:00Z"
+}
+```
+
+**Field reference:**
+| Field | Required | Description |
+|-------|----------|-------------|
+| `participant_id` | yes | Numeric ID from auth/lookup |
+| `game_score` | yes | Final score (0-100) |
+| `blocks_hit` | yes | Total blocks hit during session |
+| `hand_tracking_status` | yes | "active" if hand tracking worked, "none" if MediaPipe unavailable |
+| `play_duration` | yes | Total play time in seconds |
+| `timestamp` | yes | ISO 8601 UTC timestamp |
+
+**Response `201`:**
+```json
+{
+  "status": "success",
+  "message": "Session recorded",
+  "data": {
+    "session_id": 42
+  }
+}
+```
+
+**Response `400` (validation error):**
+```json
+{
+  "status": "error",
+  "message": "Missing required fields: hand_tracking_status, play_duration",
+  "data": null
+}
+```
+
+**Offline behavior:** When server is unreachable, the client buffers the payload to a local SQLite table (`pending_sessions`). A background sync daemon retries every 15 seconds until the server responds.
+
+---
+
+### 15.4 Room Management (HTTP)
+
+#### `GET /api/v1/rooms`
+
+List active rooms (status: `waiting`, `ready`, or `playing`).
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Rooms fetched",
+  "data": [
+    {
+      "id": "AB12",
+      "status": "waiting",
+      "player1_name": "Budi",
+      "player2_name": "",
+      "player1_ready": false,
+      "player2_ready": false,
+      "last_activity": "2026-05-13T10:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+#### `POST /api/v1/rooms`
+
+Create a new room. Returns a 4-character room code.
+
+**Request:**
+```json
+{ "player_name": "Budi" }
+```
+
+**Response `201`:**
+```json
+{
+  "status": "success",
+  "message": "Room created",
+  "data": {
+    "id": "AB12",
+    "status": "waiting",
+    "player1_name": "Budi",
+    "player2_name": "",
+    "player1_ready": false,
+    "player2_ready": false,
+    "last_activity": "2026-05-13T10:00:00Z"
+  }
+}
+```
+
+---
+
+#### `POST /api/v1/rooms/{code}/join`
+
+Join an existing room as Player 2.
+
+**Request:**
+```json
+{ "player_name": "Ani" }
+```
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Joined room",
+  "data": {
+    "id": "AB12",
+    "status": "ready",
+    "player1_name": "Budi",
+    "player2_name": "Ani",
+    "player1_ready": false,
+    "player2_ready": false
+  }
+}
+```
+
+**Response `409`:**
+```json
+{ "status": "error", "message": "Room is full", "data": null }
+```
+
+---
+
+#### `POST /api/v1/rooms/{code}/ready`
+
+Mark player as ready. When both players are ready, room status changes to `playing`.
+
+**Request:**
+```json
+{ "player_name": "Budi" }
+```
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Ready set",
+  "data": {
+    "id": "AB12",
+    "status": "playing",
+    "player1_name": "Budi",
+    "player2_name": "Ani",
+    "player1_ready": true,
+    "player2_ready": true
+  }
+}
+```
+
+---
+
+#### `POST /api/v1/rooms/{code}/leave`
+
+Leave a room.
+
+**Request:**
+```json
+{ "player_name": "Ani" }
+```
+
+**Response `200`:**
+```json
+{ "status": "success", "message": "Left room", "data": { "ok": true } }
+```
+
+---
+
+### 15.5 WebSocket — Real-time 1v1 Match
+
+#### `WS /ws/match/{room_id}?role={player|spectator}&player_id={id}`
+
+Real-time telemetry channel. Runs in a background thread with its own asyncio event loop. Supports two connection modes:
+
+**Player connection:**
+```
+ws://localhost:8080/ws/match/AB12?role=player&player_id=P1
+```
+
+**Spectator connection:**
+```
+ws://localhost:8080/ws/match/AB12?role=spectator&player_id=S1
+```
+
+#### Player → Server (Telemetry)
+
+**Throttled state updates (~5 Hz — every 200ms):**
+```json
+{ "game_score": 3, "blocks_hit": 12 }
+```
+
+**Immediate score push (on collision hit — non-throttled):**
+```json
+{ "type": "SCORE_UPDATE", "game_score": 3, "blocks_hit": 12 }
+```
+
+**Game over (sent exactly once at session end):**
+```json
+{ "type": "GAME_OVER", "game_score": 85, "blocks_hit": 12, "play_duration": 42.5 }
+```
+
+#### Server → Spectator (Broadcasts)
+
+**Player joined:**
+```json
+{ "type": "join", "player_id": "P1" }
+```
+
+**Score update:**
+```json
+{ "type": "score_update", "player_id": "P1", "game_score": 85, "blocks_hit": 12 }
+```
+
+**Game over:**
+```json
+{ "type": "GAME_OVER", "player_id": "P1", "game_score": 95, "blocks_hit": 15 }
+```
+
+**Player left:**
+```json
+{ "type": "leave", "player_id": "P1" }
+```
+
+#### LAN Master Push Mode
+
+For LAN-only setups (no central server), the client can push directly to a master PC:
+
+```bash
+MASTER_IP=192.168.1.100   # Master PC IP
+MASTER_PORT=8080           # Master PC port
+ROOM_ID=AB12               # Room code
+```
+
+In this mode, the client connects to `ws://{MASTER_IP}:{MASTER_PORT}/ws/match/{ROOM_ID}?role=player&player_id={pid}` instead of the backend server.
+
+#### Implementation Notes
+
+- Throttled updates via tick loop (200ms interval)
+- Immediate SCORE_UPDATE via `asyncio.run_coroutine_threadsafe()` (no throttling)
+- GAME_OVER uses a `_game_over_sent` flag to guarantee exactly-once delivery
+- Reconnect on `ConnectionClosed`, `InvalidStatusCode`, `OSError` with 3-second retry
+- Room spectator uses separate `RoomClient` class with its own background thread
+
+---
+
+### 15.6 Offline Buffer & Sync
+
+The game client maintains a local SQLite database (`local_buffer.db`) to survive network outages:
+
+| Table | Purpose | Sync Endpoint |
+|-------|---------|---------------|
+| `pending_sessions` | Buffered game submissions | `POST /api/v1/game/submit` |
+
+**Sync behavior:**
+1. Submission fails (server unreachable) → payload buffered locally
+2. Background thread wakes every 15 seconds
+3. If server online, flushes all buffered rows in order
+4. On success, row deleted from buffer
+5. On failure, sync pauses and retries on next cycle
+
+---
+
+### 15.7 Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BACKEND_API_URL` | `http://localhost:8080/api/v1` | Go backend HTTP endpoint |
+| `BACKEND_WS_URL` | `ws://localhost:8080` | Go backend WebSocket base |
+| `SOLO_MODE` | `false` | Skip server entirely, local-only operation |
+| `BACKEND_API_URL=offline` | — | Same as SOLO_MODE, use local ID generation |
+| `MASTER_IP` | — | LAN master push target IP |
+| `MASTER_PORT` | `8080` | LAN master push target port |
+| `ROOM_ID` | — | Room code for LAN master push mode |
+| `CAMERA_INDEX` | `0` | Webcam device index |
+| `CAMERA_GAME_INDEX` | same as CAMERA_INDEX | Game camera index |
+| `LEVEL_TIME_LIMIT` | `30` | Seconds per level before tension tick |
+| `MAX_LEVEL` | `8` | Number of levels in a session |
+| `YOLO_SKIP_FRAMES` | `2` | Process every (N+1) frames |
+| `MEDIAPIPE_SKIP_FRAMES` | `2` | Process every (N+1) frames |
+| `DISPLAY_HALF` | `true` | Use smaller window (1200x620) |
+| `HIDE_CAMERA` | `false` | Hide camera panel |
+| `DEBUG_MODE` | `false` | Enable debug logging |
+| `MODEL_BANTAL` | `false` | Use Ultralytics YOLO format vs hub format |
+
+---
+
+### 15.8 Payload Summary
+
+| Scenario | Method | Endpoint | Payload |
+|----------|--------|----------|---------|
+| Auth by RFID UID | GET | `/api/v1/app/auth/{uid}` | — |
+| Lookup by numeric ID | GET | `/api/v1/participants/id/{id}` | — |
+| Submit game session | POST | `/api/v1/game/submit` | `{participant_id, game_score, blocks_hit, hand_tracking_status, play_duration, timestamp}` |
+| List rooms | GET | `/api/v1/rooms` | — |
+| Create room | POST | `/api/v1/rooms` | `{player_name}` |
+| Join room | POST | `/api/v1/rooms/{code}/join` | `{player_name}` |
+| Mark ready | POST | `/api/v1/rooms/{code}/ready` | `{player_name}` |
+| Leave room | POST | `/api/v1/rooms/{code}/leave` | `{player_name}` |
+| WS player telemetry | WS | `/ws/match/{room_id}?role=player` | `{game_score, blocks_hit}` |
+| WS immediate hit | WS | same | `{type:"SCORE_UPDATE", game_score, blocks_hit}` |
+| WS game over | WS | same | `{type:"GAME_OVER", game_score, blocks_hit, play_duration}` |
+| WS spectator | WS | `/ws/match/{room_id}?role=spectator` | receives broadcasts |

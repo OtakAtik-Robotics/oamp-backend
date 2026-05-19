@@ -52,3 +52,21 @@ func GetParticipants(c *gin.Context) {
 
 	response.OKWithMessage(c, "Participants fetched successfully", participants)
 }
+
+// GET /api/v1/participants/id/:id — lookup by numeric DB ID
+func GetParticipantByID(c *gin.Context) {
+	idStr := c.Param("id")
+	var id uint
+	if _, err := strconv.ParseUint(idStr, 10, 64); err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid ID")
+		return
+	}
+
+	var participant model.Participant
+	if err := config.DB.First(&participant, id).Error; err != nil {
+		response.Error(c, http.StatusNotFound, "Participant not found")
+		return
+	}
+
+	response.OKWithMessage(c, "", participant)
+}

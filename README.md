@@ -17,6 +17,7 @@ REST API server for the OtakAtik-Robotics cognitive measurement platform. Handle
 | Security | golang.org/x/time (rate limiting), go-playground/validator |
 | Payment | Midtrans Snap (Sandbox) |
 | Notifications | Telegram Bot API |
+| Real-time | gorilla/websocket (1v1 match spectator) |
 
 ## Project Structure
 
@@ -28,16 +29,22 @@ internal/
     ratelimit.go                   # Per-IP rate limiter (10 req/sec, burst 30)
     bodylimit.go                   # Request body size limit (2MB)
   controller/
-    participant.go                 # POST /api/v1/participants
-    robot.go                       # Robot auth, sessions, face logs
+    participant.go                 # POST/GET /api/v1/participants, filter by batch_id
+    robot.go                       # Robot auth, sessions, face logs (premium-gated)
     app.go                         # Android auth, quiz submission
     leaderboard.go                # GET /api/v1/leaderboard, /leaderboard/timeline
     export.go                     # Excel, PDF, per-participant rapor
     batches.go                    # GET/POST /api/v1/batches (event batch management)
-    analysis.go                   # GET /api/v1/participants/analysis/{uid} (AI)
+    analysis.go                   # GET /api/v1/participants/analysis/{uid} (AI, premium-gated)
     payment.go                    # Midtrans checkout, webhook, simulate
+    match.go                      # Rooms CRUD, ranking, stats, game/event (Next.js migration)
+    room_manager.go               # In-memory room manager for 1v1 matchmaking
+    game.go                       # Pure game result submission (oamp-game client)
     health.go                     # GET /health
-  model/model.go                  # GORM models: Participant, GameSession, EventBatch, etc.
+  websocket/
+    room.go                      # WS room manager: players + spectators, GAME_OVER persistence
+    handler.go                   # WS endpoint /ws/match/:room_id
+  model/model.go                  # GORM models: Participant, GameSession, PureGameResult, etc.
   route/route.go                  # Route definitions, CORS, middleware registration
 pkg/
   response/response.go             # Standardized JSON response helpers + validation formatter
@@ -149,10 +156,24 @@ AI_BASE_URL=https://api.deepseek.com
 |--------|------|-------------|
 | GET | `/health` | Server + DB health check |
 | POST | `/api/v1/participants` | Register participant |
-| GET | `/api/v1/robot/auth/{uid}` | Robot look up participant by UID |
-| POST | `/api/v1/robot/sessions` | Submit game session |
+| GET | `/api/v1/participants` | List participants (filter: `?batch_id=N`) |
+| POST | `/api/v1/payment/checkout/:uid` | Midtrans Snap token (premium gate) |
+| POST | `/api/v1/payment/webhook` | Midtrans notification (SHA512 validated) |
+| POST | `/api/v1/payment/simulate-success/:uid` | Test premium without payment |
+| GET | `/api/v1/robot/auth/:uid` | Robot look up participant by UID |
+| POST | `/api/v1/robot/sessions` | Submit game session (premium-gated) |
 | POST | `/api/v1/robot/logs/face` | Submit batch face expression logs |
-| GET | `/api/v1/app/auth/{uid}` | Android app login |
+| POST | `/api/v1/game/submit` | Pure game result (premium-gated, no face/emotion) |
+| WS | `/ws/match/:room_id?role={player\|spectator}&player_id={id}` | 1v1 real-time match |
+| POST | `/api/v1/rooms` | Create 1v1 match room |
+| GET | `/api/v1/rooms` | List active rooms |
+| POST | `/api/v1/rooms/:code/join` | Join room as player 2 |
+| POST | `/api/v1/rooms/:code/leave` | Leave room |
+| POST | `/api/v1/rooms/:code/ready` | Mark player ready (both ready → "playing") |
+| GET | `/api/v1/ranking` | Leaderboard (CTF-style) |
+| GET | `/api/v1/stats` | Aggregate statistics |
+| POST | `/api/v1/game/event` | Desktop game event (join_room, leave_room) |
+| GET | `/api/v1/app/auth/:uid` | Android app login |
 | POST | `/api/v1/app/quiz` | Submit quiz result |
 | GET | `/api/v1/leaderboard` | CTF-style top 10 leaderboard |
 | GET | `/api/v1/leaderboard/timeline` | Timeline data (max 200 entries) |
@@ -160,10 +181,119 @@ AI_BASE_URL=https://api.deepseek.com
 | POST | `/api/v1/batches` | Create new event batch (auto-activates) |
 | GET | `/api/v1/export/excel` | Download .xlsx report |
 | GET | `/api/v1/export/pdf` | Download .pdf leaderboard |
-| GET | `/api/v1/export/rapor/{uid}` | Download per-participant .pdf rapor |
-| GET | `/api/v1/participants/analysis/{uid}` | AI health analysis (Markdown) |
+| GET | `/api/v1/export/rapor/:uid` | Download per-participant .pdf rapor |
+| GET | `/api/v1/participants/analysis/:uid` | AI health analysis (premium-gated) |
 
-Full API reference: [API.md](API.md)
+---
+
+## Application Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  1. REGISTRATION                                                                │
+│                                                                                  │
+│  Station PC                                                                        │
+│  ┌─────────────────────────────────┐                                             │
+│  │ POST /api/v1/participants       │                                             │
+│  │ { uid, name, age, gender,       │                                             │
+│  │   height, weight, ... }          │                                             │
+│  └────────────┬────────────────────┘                                             │
+│               ▼                                                                  │
+│          PostgreSQL                                                              │
+│       participants table                                                         │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  2. PAYMENT (Pay-First Model)                                                    │
+│                                                                                  │
+│  React Frontend                          Go Backend                              │
+│  ┌──────────────────────┐              ┌──────────────────────┐                 │
+│  │ POST /payment/       │ ───checkout──▶│ Creates Snap token  │                 │
+│  │   checkout/:uid      │              │ Returns snap_token   │                 │
+│  └──────────────────────┘              └──────────────────────┘                 │
+│                                            │                                      │
+│           ┌────────────────────────────────┼────────────────────────────┐        │
+│           ▼                                ▼                                ▼        │
+│  ┌──────────────────┐            ┌──────────────────┐         ┌─────────────────┐ │
+│  │ Midtrans Web UI  │            │ POST /payment/    │         │ Telegram Alert  │ │
+│  │ (QRIS/GoPay/CC)  │            │ webhook           │         │ (async)         │ │
+│  └────────┬─────────┘            │ SHA512 validated  │         └─────────────────┘ │
+│           │                      │ → is_premium=true │                          │
+│           ▼                      └──────────────────┘                           │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  3. GAME PLAY (3 paths)                                                         │
+│                                                                                  │
+│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐                           │
+│  │ Robot Client │   │ oamp-game    │   │ 1v1 Match   │                           │
+│  │ (YOLO/etc)  │   │ (Hand Track) │   │ (WebSocket) │                           │
+│  └──────┬───────┘   └──────┬───────┘   └──────┬───────┘                           │
+│         │                 │                 │                                   │
+│         ▼                 ▼                 ▼                                   │
+│  POST /robot/sessions  POST /game/submit   WS /ws/match/:id                       │
+│  {session, expressions │ {game_score,     Player sends GAME_OVER                  │
+│   datasets}           blocks_hit, ...}    → broadcast to spectators               │
+│                              │            → persist PureGameResult to DB         │
+│                              └──────────────┘                                     │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  4. RESULT & ANALYSIS                                                           │
+│                                                                                  │
+│  GET /api/v1/leaderboard        GET /api/v1/participants/analysis/:uid           │
+│  CTF top 10 unique              AI Health Report (LLM)                           │
+│  participants                   (premium-gated → 403 "Pay first" if unpaid)     │
+│                                                                                  │
+│  GET /api/v1/export/excel       GET /api/v1/export/rapor/:uid                   │
+│  3-sheet workbook             Per-participant PDF rapor                        │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 1v1 Match Architecture (WebSocket)
+
+```
+Player 1 (P1)                           Player 2 (P2)
+  │                                        │
+  │──── POST /rooms ──────────────────────▶│  Create room, get 4-char code
+  │                                        │
+  │◀──── code: "AB12" ─────────────────────│
+  │                                        │
+  │──── WS /ws/match/AB12?role=player ────▶│  Both players connect WS
+  │──── &player_id=P1 ─────────────────────▶│
+  │                                        │
+  │◀──── /rooms/AB12/join ────────────────▶│  P2 joins with player_name
+  │                                        │
+  │──── POST /rooms/AB12/ready ───────────▶│  Both call ready → status="playing"
+  │                                        │
+  │◀──── status="playing" ────────────────▶│
+  │                                        │
+  │   Real-time score broadcast via WS      │
+  │   ┌─────────────────────────────────┐ │
+  │   │ {type:"score_update",            │ │
+  │   │  player_id:"P1",                 │ │
+  │   │  game_score:85, blocks_hit:12}   │ │
+  │   └──────────────┬──────────────────┘ │
+  │                  ▼ (to all spectators)│
+  │            Spectator dashboard         │
+  │                                        │
+  │   P1 sends GAME_OVER ───────────────▶│
+  │   ┌─────────────────────────────────┐ │
+  │   │ {type:"GAME_OVER", game_score:X, │ │
+  │   │  blocks_hit:Y, play_duration:Z}  │ │
+  │   └──────────────┬──────────────────┘ │
+  │                  ▼                   │
+  │          DB: PureGameResult         │
+  │          Room destroyed when both   │
+  │          players finish             │
+  └─────────────────────────────────────┘
+```
 
 ---
 

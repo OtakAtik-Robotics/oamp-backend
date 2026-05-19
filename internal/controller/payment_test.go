@@ -28,7 +28,7 @@ func TestPaymentWebhook_InvalidSignature(t *testing.T) {
 	r.POST("/webhook", PaymentWebhook)
 
 	payload := map[string]interface{}{
-		"order_id":          "OAMP-RFID-001-123456",
+		"order_id":          "OAMP-BCR-001-123456",
 		"status_code":       "200",
 		"gross_amount":      "10000.00",
 		"signature_key":     "wrong_signature",
@@ -51,7 +51,7 @@ func TestPaymentWebhook_ValidSignature_Settlement(t *testing.T) {
 	midtransServerKey = "test-server-key"
 	defer func() { midtransServerKey = "" }()
 
-	orderID := "OAMP-RFID-001-123456"
+	orderID := "OAMP-BCR-001-123456"
 	statusCode := "200"
 	grossAmount := "10000.00"
 
@@ -90,7 +90,7 @@ func TestPaymentWebhook_MissingFields(t *testing.T) {
 	r.POST("/webhook", PaymentWebhook)
 
 	payload := map[string]interface{}{
-		"order_id": "OAMP-RFID-001-123456",
+		"order_id": "OAMP-BCR-001-123456",
 	}
 	body, _ := json.Marshal(payload)
 
@@ -130,7 +130,7 @@ func TestCheckout_ServiceUnavailable(t *testing.T) {
 	r := setupTestRouter()
 	r.POST("/checkout/:uid", Checkout)
 
-	req := httptest.NewRequest(http.MethodPost, "/checkout/RFID-001", nil)
+	req := httptest.NewRequest(http.MethodPost, "/checkout/BCR-001", nil)
 	w := httptest.NewRecorder()
 
 	r.ServeHTTP(w, req)
@@ -164,7 +164,7 @@ func TestVerifySignature_Correct(t *testing.T) {
 	midtransServerKey = "SB-Mid-server-TEST"
 	defer func() { midtransServerKey = "" }()
 
-	orderID := "OAMP-RFID-001-1234567890"
+	orderID := "OAMP-BCR-001-1234567890"
 	statusCode := "200"
 	grossAmount := "10000.00"
 
@@ -189,7 +189,7 @@ func TestVerifySignature_TamperedAmount(t *testing.T) {
 	midtransServerKey = "SB-Mid-server-TEST"
 	defer func() { midtransServerKey = "" }()
 
-	orderID := "OAMP-RFID-001-1234"
+	orderID := "OAMP-BCR-001-1234"
 	statusCode := "200"
 	grossAmount := "10000.00"
 	tamperedAmount := "5000.00"
