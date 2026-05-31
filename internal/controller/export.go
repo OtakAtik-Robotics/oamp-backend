@@ -183,10 +183,6 @@ func ExportRapor(c *gin.Context) {
 	var sessions []model.GameSession
 	config.DB.Where("participant_id = ?", participant.ID).Order("created_at asc").Find(&sessions)
 
-	// Get quiz results
-	var quizzes []model.QuizResult
-	config.DB.Where("participant_id = ?", participant.ID).Order("created_at asc").Find(&quizzes)
-
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
 	pdf.SetAutoPageBreak(true, 15)
@@ -315,43 +311,6 @@ func ExportRapor(c *gin.Context) {
 			pdf.CellFormat(60, 6, row[0], "", 0, "L", false, 0, "")
 			pdf.SetFont("Helvetica", "", 10)
 			pdf.CellFormat(40, 6, row[1], "", 0, "L", false, 0, "")
-			pdf.Ln(-1)
-		}
-	}
-
-	// --- Quiz Results ---
-	if len(quizzes) > 0 {
-		pdf.Ln(6)
-		pdf.SetDrawColor(200, 200, 200)
-		pdf.Line(10, pdf.GetY(), 200, pdf.GetY())
-		pdf.Ln(5)
-
-		pdf.SetFont("Helvetica", "B", 13)
-		pdf.Cell(0, 8, fmt.Sprintf("Hasil Quiz (%d)", len(quizzes)))
-		pdf.Ln(10)
-
-		qHeaders := []string{"#", "Tanggal", "Skor"}
-		qColW := []float64{10, 50, 30}
-
-		pdf.SetFont("Helvetica", "B", 9)
-		pdf.SetFillColor(66, 133, 244)
-		pdf.SetTextColor(255, 255, 255)
-		for i, h := range qHeaders {
-			pdf.CellFormat(qColW[i], 7, h, "1", 0, "C", true, 0, "")
-		}
-		pdf.Ln(-1)
-
-		pdf.SetTextColor(0, 0, 0)
-		pdf.SetFont("Helvetica", "", 9)
-		for i, q := range quizzes {
-			if i%2 == 0 {
-				pdf.SetFillColor(245, 245, 245)
-			} else {
-				pdf.SetFillColor(255, 255, 255)
-			}
-			pdf.CellFormat(qColW[0], 6, fmt.Sprintf("%d", i+1), "1", 0, "C", true, 0, "")
-			pdf.CellFormat(qColW[1], 6, q.CreatedAt.Format("02/01/2006 15:04"), "1", 0, "C", true, 0, "")
-			pdf.CellFormat(qColW[2], 6, fmt.Sprintf("%d", q.Score), "1", 0, "C", true, 0, "")
 			pdf.Ln(-1)
 		}
 	}

@@ -3,13 +3,9 @@ package websocket
 import (
 	"encoding/json"
 	"log"
-	"strconv"
 	"sync"
-	"time"
 
 	"github.com/gorilla/websocket"
-	"oamp-backend/internal/config"
-	"oamp-backend/internal/model"
 )
 
 type Client struct {
@@ -180,31 +176,9 @@ func (m *Manager) HandlePlayerMessage(roomID string, client *Client, raw []byte)
 }
 
 func (m *Manager) handleGameOver(room *Room, client *Client, msg *GameMessage) {
-	// Broadcast GAME_OVER to everyone (players + spectators)
 	broadcast, _ := json.Marshal(msg)
 	room.broadcastAll(broadcast)
 
-	// Persist to DB
-	if config.DB != nil {
-		participantID, err := strconv.Atoi(client.PlayerID)
-		if err == nil {
-			result := model.PureGameResult{
-				ParticipantID:      uint(participantID),
-				GameScore:          msg.GameScore,
-				BlocksHit:          msg.BlocksHit,
-				PlayDuration:       msg.PlayDuration,
-				HandTrackingStatus: "active",
-				Timestamp:          time.Now(),
-			}
-			if err := config.DB.Create(&result).Error; err != nil {
-				log.Printf("[ws] failed to persist game result for player %s: %v", client.PlayerID, err)
-			} else {
-				log.Printf("[ws] game result persisted for player %s, score=%d", client.PlayerID, msg.GameScore)
-			}
-		}
-	}
-
-	// Track game-over count, cleanup room when both players finish
 	room.mu.Lock()
 	room.GameOvers++
 	gameOvers := room.GameOvers

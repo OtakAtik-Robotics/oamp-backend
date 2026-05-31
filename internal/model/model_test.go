@@ -60,13 +60,4 @@ func TestEventBatch_Defaults(t *testing.T) {
 	}
 }
 
-func TestQuizResult_Fields(t *testing.T) {
-	q := QuizResult{
-		ParticipantID: 1,
-		Score:         85,
-		AnswersData:   `{"q1":"A"}`,
-	}
-	if q.Score != 85 {
-		t.Errorf("expected Score 85, got %d", q.Score)
-	}
-}
+

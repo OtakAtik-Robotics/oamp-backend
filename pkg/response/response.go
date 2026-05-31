@@ -31,13 +31,6 @@ func OKWithMessage(c *gin.Context, message string, data interface{}) {
 	})
 }
 
-func Created(c *gin.Context, data interface{}) {
-	c.JSON(http.StatusCreated, APIResponse{
-		Status: "success",
-		Data:   data,
-	})
-}
-
 func CreatedWithMessage(c *gin.Context, message string, data interface{}) {
 	c.JSON(http.StatusCreated, APIResponse{
 		Status:  "success",
