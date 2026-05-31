@@ -67,6 +67,8 @@ func SetupRoutes(r *gin.Engine) {
 		api.GET("/participants", controller.GetParticipants)
 		api.GET("/participants/stats", controller.GetParticipantsWithScores)
 		api.GET("/participants/id/:id", controller.GetParticipantByID)
+		api.DELETE("/participants/all", controller.DeleteAllParticipants)
+		api.DELETE("/participants/:id", controller.DeleteParticipant)
 		api.GET("/participants/lookup/:nickname", controller.LookupParticipant)
 		api.GET("/participants/uid/:uid/sessions", controller.GetParticipantSessions)
 

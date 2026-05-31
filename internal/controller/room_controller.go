@@ -161,8 +161,9 @@ func SetReadyDB(code, playerName string) (*model.Room, error) {
 // LeaveRoomDB removes a player and their player_state; returns action taken
 func LeaveRoomDB(code, playerName string) (string, error) {
 	code = strings.ToUpper(code)
-	var room model.Room
+	var action string
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		var room model.Room
 		if err := tx.Where("id = ?", code).First(&room).Error; err != nil {
 			return err
 		}
@@ -181,6 +182,7 @@ func LeaveRoomDB(code, playerName string) (string, error) {
 
 		if isPlayer1 && room.Player2Name != "" {
 			// Promote player2 to player1
+			action = "player_promoted"
 			updates := map[string]interface{}{
 				"player1_name":   room.Player2Name,
 				"player2_name":   "",
@@ -192,6 +194,7 @@ func LeaveRoomDB(code, playerName string) (string, error) {
 			return tx.Model(&room).Updates(updates).Error
 		} else if isPlayer2 {
 			// Player2 leaves
+			action = "player2_left"
 			updates := map[string]interface{}{
 				"player2_name":   "",
 				"player1_ready":  false,
@@ -202,18 +205,10 @@ func LeaveRoomDB(code, playerName string) (string, error) {
 			return tx.Model(&room).Updates(updates).Error
 		}
 		// Only player in room — delete room entirely
+		action = "room_deleted"
 		return tx.Delete(&room).Error
 	})
-	if err != nil {
-		return "", err
-	}
-
-	if room.Player1Name == playerName && room.Player2Name == "" {
-		return "room_deleted", nil
-	} else if room.Player1Name == playerName && room.Player2Name != "" {
-		return "player_promoted", nil
-	}
-	return "player2_left", nil
+	return action, err
 }
 
 // UpsertPlayerStateDB processes game events from desktop client

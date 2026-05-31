@@ -169,3 +169,48 @@ func GetParticipantSessions(c *gin.Context) {
 
 	response.OKWithMessage(c, "Sessions fetched successfully", sessions)
 }
+
+// DeleteParticipant — DELETE /api/v1/participants/:id
+func DeleteParticipant(c *gin.Context) {
+	idStr := c.Param("id")
+	var id uint
+	if parsed, err := strconv.ParseUint(idStr, 10, 64); err != nil {
+		response.Error(c, http.StatusBadRequest, "Invalid ID")
+		return
+	} else {
+		id = uint(parsed)
+	}
+
+	var participant model.Participant
+	if err := config.DB.First(&participant, id).Error; err != nil {
+		response.Error(c, http.StatusNotFound, "Participant not found")
+		return
+	}
+
+	// Explicitly delete related records (production DB may lack ON DELETE CASCADE)
+	config.DB.Where("participant_id = ?", participant.ID).Delete(&model.GameSession{})
+	config.DB.Where("participant_id = ?", participant.ID).Delete(&model.TournamentPlayer{})
+	config.DB.Where("uid = ?", participant.UID).Delete(&model.GameResult{})
+
+	if err := config.DB.Delete(&participant).Error; err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to delete participant")
+		return
+	}
+
+	response.OKWithMessage(c, "Participant deleted", nil)
+}
+
+// DeleteAllParticipants — DELETE /api/v1/participants/all
+func DeleteAllParticipants(c *gin.Context) {
+	// Wipe tables with FK to participants first (avoid constraint errors)
+	config.DB.Exec("DELETE FROM game_sessions")
+	config.DB.Exec("DELETE FROM tournament_players")
+	config.DB.Exec("DELETE FROM game_results")
+
+	if err := config.DB.Exec("DELETE FROM participants").Error; err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to delete participants")
+		return
+	}
+
+	response.OKWithMessage(c, "All participants deleted", nil)
+}

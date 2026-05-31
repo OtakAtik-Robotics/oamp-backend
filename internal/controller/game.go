@@ -12,8 +12,8 @@ import (
 
 // SubmitGameResult — POST /api/v1/game/submit
 // Accepts game client payload (bracelet UID scan → store task results)
-// mode: "training" → game_results (AI analysis only)
-// mode: "competition" → game_sessions (leaderboard) + game_results (AI analysis)
+// mode: "training" → game_results + game_sessions (leaderboard training)
+// mode: "competition" → game_results + game_sessions (leaderboard competition)
 func SubmitGameResult(c *gin.Context) {
 	var result model.GameResult
 	if err := c.ShouldBindJSON(&result); err != nil {
@@ -41,11 +41,9 @@ func SubmitGameResult(c *gin.Context) {
 	// Always save to game_results (AI analysis)
 	saveGameResult(&result)
 
-	// If competition mode, also save to game_sessions (leaderboard)
-	if result.Mode == "competition" {
-		if err := saveCompetitionSession(&result, participant.ID); err != nil {
-			// log but don't fail the request — game_results was saved successfully
-		}
+	// Save to game_sessions for both training and competition (leaderboard)
+	if err := saveGameSession(&result, participant.ID); err != nil {
+		// log but don't fail the request — game_results was saved successfully
 	}
 
 	response.CreatedWithMessage(c, "Game result recorded", gin.H{
@@ -59,7 +57,7 @@ func SubmitGameResult(c *gin.Context) {
 func saveGameResult(result *model.GameResult) {
 	config.DB.Exec(
 		`INSERT INTO game_results (uid, mode, nick_name, gender, age, task01, task02, task03, task04, task05, task06, task07, task08, task_avg, cognitive_age, visuo_spatial, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		 ON CONFLICT (uid) DO UPDATE SET
 		 	mode = EXCLUDED.mode,
 		 	nick_name = EXCLUDED.nick_name,
@@ -84,8 +82,8 @@ func saveGameResult(result *model.GameResult) {
 	)
 }
 
-// saveCompetitionSession computes leaderboard fields and inserts into game_sessions
-func saveCompetitionSession(result *model.GameResult, participantID uint) error {
+// saveGameSession computes leaderboard fields and inserts into game_sessions
+func saveGameSession(result *model.GameResult, participantID uint) error {
 	// Count completed levels (non-zero tasks)
 	levelReached := 0
 	if result.Task01 > 0 {

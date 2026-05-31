@@ -5,6 +5,7 @@ import (
 	"oamp-backend/internal/model"
 	"oamp-backend/pkg/response"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -41,7 +42,7 @@ type TimelineEntry struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-func fetchLeaderboard(limit int, batchID *uint) []LeaderboardEntry {
+func fetchLeaderboard(limit int, batchID *uint, mode string) []LeaderboardEntry {
 	query := `
         SELECT
             ROW_NUMBER() OVER (ORDER BY sub.score DESC) AS rank,
@@ -68,10 +69,20 @@ func fetchLeaderboard(limit int, batchID *uint) []LeaderboardEntry {
             FROM game_sessions`
 
 	var args []any
+	var conditions []string
 
 	if batchID != nil {
-		query += ` WHERE event_batch_id = ?`
+		conditions = append(conditions, "event_batch_id = ?")
 		args = append(args, *batchID)
+	}
+
+	if mode != "" {
+		conditions = append(conditions, "mode = ?")
+		args = append(args, mode)
+	}
+
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
 
 	query += `
@@ -106,13 +117,17 @@ func GetLeaderboard(c *gin.Context) {
 			batchID = &activeID
 		}
 	}
-	entries := fetchLeaderboard(0, batchID)
+	mode := c.Query("mode")
+	entries := fetchLeaderboard(0, batchID, mode)
 	response.OKWithMessage(c, "Leaderboard fetched successfully", entries)
 }
 
 func GetLeaderboardTimeline(c *gin.Context) {
 	idStr := c.Query("batch_id")
+	mode := c.Query("mode")
 	var args []any
+	var conditions []string
+
 	query := `
         SELECT
             p.name,
@@ -121,24 +136,32 @@ func GetLeaderboardTimeline(c *gin.Context) {
         FROM game_sessions gs
         JOIN participants p ON p.id = gs.participant_id`
 
-	if idStr == "all" {
-	} else if idStr != "" {
+	if idStr != "" && idStr != "all" {
 		var id uint
 		if _, err := parseUint(idStr, &id); err == nil {
-			query += ` WHERE gs.event_batch_id = ?`
+			conditions = append(conditions, "gs.event_batch_id = ?")
 			args = append(args, id)
 		} else {
 			response.OKWithMessage(c, "Timeline fetched successfully", []TimelineEntry{})
 			return
 		}
-	} else {
+	} else if idStr != "all" {
 		var activeID uint
 		if err := config.DB.Model(&model.EventBatch{}).Where("is_active = ?", true).Select("id").First(&activeID).Error; err != nil {
 			response.OKWithMessage(c, "Timeline fetched successfully", []TimelineEntry{})
 			return
 		}
-		query += ` WHERE gs.event_batch_id = ?`
+		conditions = append(conditions, "gs.event_batch_id = ?")
 		args = append(args, activeID)
+	}
+
+	if mode != "" {
+		conditions = append(conditions, "gs.mode = ?")
+		args = append(args, mode)
+	}
+
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
 
 	query += ` ORDER BY gs.created_at ASC LIMIT 200`

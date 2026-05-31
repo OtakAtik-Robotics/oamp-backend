@@ -34,7 +34,7 @@ func ExportExcel(c *gin.Context) {
 	}
 	f.SetCellStyle(sheetLeaderboard, "A1", "H1", headerStyle)
 
-	entries := fetchLeaderboard(0, nil)
+	entries := fetchLeaderboard(0, nil, "")
 	for i, e := range entries {
 		row := i + 2
 		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("A%d", row), e.Rank)
@@ -112,7 +112,7 @@ func ExportExcel(c *gin.Context) {
 }
 
 func ExportPDF(c *gin.Context) {
-	entries := fetchLeaderboard(0, nil)
+	entries := fetchLeaderboard(0, nil, "")
 
 	pdf := gofpdf.New("L", "mm", "A4", "")
 	pdf.AddPage()
