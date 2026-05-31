@@ -200,17 +200,4 @@ func DeleteParticipant(c *gin.Context) {
 	response.OKWithMessage(c, "Participant deleted", nil)
 }
 
-// DeleteAllParticipants — DELETE /api/v1/participants/all
-func DeleteAllParticipants(c *gin.Context) {
-	// Wipe tables with FK to participants first (avoid constraint errors)
-	config.DB.Exec("DELETE FROM game_sessions")
-	config.DB.Exec("DELETE FROM tournament_players")
-	config.DB.Exec("DELETE FROM game_results")
 
-	if err := config.DB.Exec("DELETE FROM participants").Error; err != nil {
-		response.Error(c, http.StatusInternalServerError, "Failed to delete participants")
-		return
-	}
-
-	response.OKWithMessage(c, "All participants deleted", nil)
-}
