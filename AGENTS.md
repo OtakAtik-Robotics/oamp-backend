@@ -41,9 +41,17 @@ See `.env.example` for full list.
 
 ## Testing
 
-- Tests run **without a database**. `payment_test.go` and `response_test.go` use `gin.TestMode` with `httptest.NewRecorder()`. Model tests are pure struct checks.
-- Payment tests reset `midtransServerKey` and `midtransOnce` (`sync.Once`) between cases — copy this pattern if testing other `sync.Once`-initialized globals.
-- Don't add integration tests that need PostgreSQL without mocking `config.DB`.
+- Controller tests use an **in-memory SQLite** database (`file::memory:`) via `gorm.io/driver/sqlite`. `setupTestDB(t)` opens a fresh isolated DB, `cleanupTestDB()` sets `config.DB = nil`. Each test gets its own DB instance.
+- Non-DB tests: `payment_test.go`, `response_test.go` (`gin.TestMode` + `httptest.NewRecorder()`), and `model_test.go` (pure struct checks) — no database needed.
+- New test coverage exists in:
+  - `room_controller_test.go` — Room CRUD, join, leave, ready, stale cleanup, game events
+  - `tournament_test.go` — Bracket generation, bye handling, match result submission, winner advancement, active-match lookup
+  - `game_controller_test.go` — Score computation, dexterity cap, mode filtering, participant lookup
+- **Known SQLite limitations in tests:**
+  - `DISTINCT ON` (used by `fetchLeaderboard`) is PostgreSQL-only; leaderboard raw-SQL tests are skipped in SQLite.
+  - `config.DB.First(&model, "STRING")` interprets the string as a column name in SQLite. Always use `.Where("id = ?", val).First(&model)` in test assertions.
+  - `saveGameResult` raw SQL uses `CURRENT_TIMESTAMP` (compatible with both PostgreSQL and SQLite).
+- Payment tests reset `midtransServerKey` and `midtransOnce` (`sync.Once`) between cases — copy this pattern for other `sync.Once`-initialized globals.
 
 ## Response Format
 
