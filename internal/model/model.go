@@ -71,14 +71,21 @@ type GameSession struct {
 
 // Room — database-backed 1v1 match room
 type Room struct {
-	ID           string    `json:"id" gorm:"primaryKey;size:4"` // 4-char code, e.g. "ABCD"
-	Status       string    `json:"status" gorm:"size:20;default:waiting"` // waiting|ready|playing|finished
-	Player1Name  string    `json:"player1_name" gorm:"size:100"`
-	Player2Name  string    `json:"player2_name" gorm:"size:100"`
-	Player1Ready bool      `json:"player1_ready" gorm:"default:false"`
-	Player2Ready bool      `json:"player2_ready" gorm:"default:false"`
-	LastActivity time.Time `json:"last_activity" gorm:"not null"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID                string    `json:"id" gorm:"primaryKey;size:4"` // 4-char code, e.g. "ABCD"
+	Status            string    `json:"status" gorm:"size:20;default:waiting"` // waiting|ready|playing|finished
+	Player1Name       string    `json:"player1_name" gorm:"size:100"`
+	Player2Name       string    `json:"player2_name" gorm:"size:100"`
+	Player1Ready      bool      `json:"player1_ready" gorm:"default:false"`
+	Player2Ready      bool      `json:"player2_ready" gorm:"default:false"`
+	Player1UID        string    `json:"player1_uid" gorm:"size:50"`
+	Player2UID        string    `json:"player2_uid" gorm:"size:50"`
+	Player1Score      float64   `json:"player1_score" gorm:"default:0"`
+	Player2Score      float64   `json:"player2_score" gorm:"default:0"`
+	Player1Submitted  bool      `json:"player1_submitted" gorm:"default:false"`
+	Player2Submitted  bool      `json:"player2_submitted" gorm:"default:false"`
+	Winner            string    `json:"winner" gorm:"size:10"` // "1", "2", or "draw"
+	LastActivity      time.Time `json:"last_activity" gorm:"not null"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 // PlayerState — per-player state within a room
@@ -110,17 +117,17 @@ type GameResult struct {
 	NickName     string    `json:"nick_name" gorm:"size:100"`
 	Gender       string    `json:"gender" gorm:"size:10"`
 	Age          int       `json:"age"`
-	Task01       float64   `json:"task01"`
-	Task02       float64   `json:"task02"`
-	Task03       float64   `json:"task03"`
-	Task04       float64   `json:"task04"`
-	Task05       float64   `json:"task05"`
-	Task06       float64   `json:"task06"`
-	Task07       float64   `json:"task07"`
-	Task08       float64   `json:"task08"`
-	TaskAvg      float64   `json:"task_avg"`
-	CognitiveAge float64   `json:"cognitive_age"`
-	VisuoSpatial float64   `json:"visuo_spatial"`
+	Task01       float64   `json:"task01" binding:"gte=0,lte=600"`
+	Task02       float64   `json:"task02" binding:"gte=0,lte=600"`
+	Task03       float64   `json:"task03" binding:"gte=0,lte=600"`
+	Task04       float64   `json:"task04" binding:"gte=0,lte=600"`
+	Task05       float64   `json:"task05" binding:"gte=0,lte=600"`
+	Task06       float64   `json:"task06" binding:"gte=0,lte=600"`
+	Task07       float64   `json:"task07" binding:"gte=0,lte=600"`
+	Task08       float64   `json:"task08" binding:"gte=0,lte=600"`
+	TaskAvg      float64   `json:"task_avg" binding:"gte=0,lte=600"`
+	CognitiveAge float64   `json:"cognitive_age" binding:"gte=0,lte=120"`
+	VisuoSpatial float64   `json:"visuo_spatial" binding:"gte=0,lte=100"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -150,20 +157,22 @@ type TournamentPlayer struct {
 
 // TournamentMatch — single elimination bracket node
 type TournamentMatch struct {
-	ID           uint       `json:"id" gorm:"primaryKey"`
-	TournamentID uint       `json:"tournament_id" gorm:"index"`
-	Round        int        `json:"round"` // 1=Round1, 2=Quarterfinal, 3=Semifinal, 4=Final
-	MatchNumber  int        `json:"match_number"`
-	Player1ID    *uint      `json:"player1_id"`
-	Player2ID    *uint      `json:"player2_id"`
-	Player1Name  string     `json:"player1_name" gorm:"size:100"`
-	Player2Name  string     `json:"player2_name" gorm:"size:100"`
-	Player1Score float64    `json:"player1_score"`
-	Player2Score float64    `json:"player2_score"`
-	WinnerID     *uint      `json:"winner_id"`
-	Status       string     `json:"status" gorm:"size:20;default:'scheduled'"` // scheduled | ready | playing | finished | bye
-	ParentMatchID *uint     `json:"parent_match_id"`
-	ParentSlot   int        `json:"parent_slot"` // 1 or 2
-	RoomID       string     `json:"room_id" gorm:"size:4"`
-	CreatedAt    time.Time  `json:"created_at"`
+	ID                uint       `json:"id" gorm:"primaryKey"`
+	TournamentID      uint       `json:"tournament_id" gorm:"index"`
+	Round             int        `json:"round"` // 1=Round1, 2=Quarterfinal, 3=Semifinal, 4=Final
+	MatchNumber       int        `json:"match_number"`
+	Player1ID         *uint      `json:"player1_id"`
+	Player2ID         *uint      `json:"player2_id"`
+	Player1Name       string     `json:"player1_name" gorm:"size:100"`
+	Player2Name       string     `json:"player2_name" gorm:"size:100"`
+	Player1Score      float64    `json:"player1_score"`
+	Player2Score      float64    `json:"player2_score"`
+	Player1Submitted  bool       `json:"player1_submitted" gorm:"default:false"`
+	Player2Submitted  bool       `json:"player2_submitted" gorm:"default:false"`
+	WinnerID          *uint      `json:"winner_id"`
+	Status            string     `json:"status" gorm:"size:20;default:'scheduled'"` // scheduled | ready | playing | finished | bye
+	ParentMatchID     *uint      `json:"parent_match_id"`
+	ParentSlot        int        `json:"parent_slot"` // 1 or 2
+	RoomID            string     `json:"room_id" gorm:"size:4"`
+	CreatedAt         time.Time  `json:"created_at"`
 }

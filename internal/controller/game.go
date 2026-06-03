@@ -142,8 +142,8 @@ func saveGameSession(result *model.GameResult, participantID uint) error {
 		Score:           score,
 	}
 
-	// Upsert: delete existing + insert new (same as debug endpoint)
-	config.DB.Exec(`DELETE FROM game_sessions WHERE participant_id = ? AND event_batch_id = ?`, participantID, batchID)
+	// Upsert: delete existing session for same participant+batch+mode, then insert new
+	config.DB.Exec(`DELETE FROM game_sessions WHERE participant_id = ? AND event_batch_id = ? AND mode = ?`, participantID, batchID, result.Mode)
 	return config.DB.Create(&session).Error
 }
 

@@ -614,28 +614,36 @@ func HandleTournamentEvent(c *gin.Context) {
 			return
 		}
 
-		// Update only the submitting player's score
+		// Update only the submitting player's score and mark submitted
 		scoreField := "player1_score"
 		if req.PlayerNum == 2 {
 			scoreField = "player2_score"
 		}
-		config.DB.Model(&match).Update(scoreField, req.Score)
+		updates := map[string]interface{}{
+			scoreField: req.Score,
+		}
+		if req.PlayerNum == 1 {
+			updates["player1_submitted"] = true
+		} else {
+			updates["player2_submitted"] = true
+		}
+		config.DB.Model(&match).Updates(updates)
 
 		// Refresh match to see both scores
 		config.DB.First(&match, match.ID)
 
-		p1Score := match.Player1Score
-		p2Score := match.Player2Score
-
-		// If either score is still zero, wait for the other player
-		if p1Score == 0 || p2Score == 0 {
+		// If either player hasn't submitted yet, wait for the other
+		if !match.Player1Submitted || !match.Player2Submitted {
 			response.OKWithMessage(c, "Score recorded — waiting for opponent", gin.H{
 				"match_status":    "waiting",
-				"player1_score":   p1Score,
-				"player2_score":   p2Score,
+				"player1_score":   match.Player1Score,
+				"player2_score":   match.Player2Score,
 			})
 			return
 		}
+
+		p1Score := match.Player1Score
+		p2Score := match.Player2Score
 
 		// Both scores present — determine winner
 		var winnerID uint

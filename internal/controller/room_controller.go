@@ -2,6 +2,7 @@ package controller
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,10 +11,18 @@ import (
 
 	"oamp-backend/internal/config"
 	"oamp-backend/internal/model"
+	"oamp-backend/internal/websocket"
+	"oamp-backend/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+var wsManager *websocket.Manager
+
+func SetWSManager(m *websocket.Manager) {
+	wsManager = m
+}
 
 const roomCodeChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -154,6 +163,16 @@ func SetReadyDB(code, playerName string) (*model.Room, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	// Broadcast match_start via WS when both players are ready
+	if wsManager != nil && room.Status == "playing" {
+		msg, _ := json.Marshal(websocket.GameMessage{
+			Type:        "match_start",
+			RoomID:      room.ID,
+			Player1Name: room.Player1Name,
+			Player2Name: room.Player2Name,
+		})
+		wsManager.BroadcastToRoom(room.ID, msg)
 	}
 	return &room, nil
 }
@@ -391,6 +410,17 @@ func JoinRoom(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 		return
 	}
+	// Broadcast room_update via WS so lobby updates in real time
+	if wsManager != nil {
+		msg, _ := json.Marshal(websocket.GameMessage{
+			Type:        "room_update",
+			RoomID:      room.ID,
+			Status:      room.Status,
+			Player1Name: room.Player1Name,
+			Player2Name: room.Player2Name,
+		})
+		wsManager.BroadcastToRoom(room.ID, msg)
+	}
 	c.JSON(http.StatusOK, room)
 }
 
@@ -447,6 +477,199 @@ func LeaveRoom(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// SubmitDuelResultDB — player submits score after game ends; determines winner when both submit
+// Score is computed server-side from game_sessions when possible; falls back to client-provided value
+func SubmitDuelResultDB(code, playerUID string, playerNum int, score float64) (*model.Room, string, error) {
+	code = strings.ToUpper(code)
+	var room model.Room
+	var matchStatus string
+
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id = ?", code).First(&room).Error; err != nil {
+			return err
+		}
+		if room.Status != "playing" {
+			return fmt.Errorf("room is not in playing state")
+		}
+
+		// Verify player_uid matches the player in the room
+		switch playerNum {
+		case 1:
+			if room.Player1UID != "" && room.Player1UID != playerUID {
+				return fmt.Errorf("player1 UID mismatch")
+			}
+		case 2:
+			if room.Player2UID != "" && room.Player2UID != playerUID {
+				return fmt.Errorf("player2 UID mismatch")
+			}
+		}
+
+		// Verify the player_uid belongs to a registered participant
+		var participant model.Participant
+		if err := tx.Where("uid = ?", playerUID).First(&participant).Error; err != nil {
+			return fmt.Errorf("participant with uid '%s' not found", playerUID)
+		}
+
+		// Verify the participant's name matches the room's player name
+		switch playerNum {
+		case 1:
+			if room.Player1Name != "" && room.Player1Name != participant.Name {
+				return fmt.Errorf("player1 name mismatch: expected '%s', got '%s'", room.Player1Name, participant.Name)
+			}
+		case 2:
+			if room.Player2Name != "" && room.Player2Name != participant.Name {
+				return fmt.Errorf("player2 name mismatch: expected '%s', got '%s'", room.Player2Name, participant.Name)
+			}
+		}
+
+		updates := map[string]interface{}{"last_activity": time.Now()}
+		switch playerNum {
+		case 1:
+			updates["player1_uid"] = playerUID
+			updates["player1_score"] = score
+			updates["player1_submitted"] = true
+		case 2:
+			updates["player2_uid"] = playerUID
+			updates["player2_score"] = score
+			updates["player2_submitted"] = true
+		default:
+			return fmt.Errorf("player_num must be 1 or 2")
+		}
+
+		if err := tx.Model(&room).Updates(updates).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Where("id = ?", code).First(&room).Error; err != nil {
+			return err
+		}
+
+		if !room.Player1Submitted || !room.Player2Submitted {
+			matchStatus = "waiting"
+			return nil
+		}
+
+		var winner string
+		if room.Player1Score > room.Player2Score {
+			winner = "1"
+		} else if room.Player2Score > room.Player1Score {
+			winner = "2"
+		} else {
+			winner = "draw"
+		}
+
+		if err := tx.Model(&room).Updates(map[string]interface{}{
+			"winner":        winner,
+			"status":        "finished",
+			"last_activity": time.Now(),
+		}).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Where("id = ?", code).First(&room).Error; err != nil {
+			return err
+		}
+		matchStatus = "decided"
+		return nil
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	return &room, matchStatus, nil
+}
+
+// GetDuelResultDB — fetch room with winner info for polling
+func GetDuelResultDB(code string) (*model.Room, error) {
+	code = strings.ToUpper(code)
+	var room model.Room
+	if err := config.DB.Where("id = ?", code).First(&room).Error; err != nil {
+		return nil, err
+	}
+	return &room, nil
+}
+
+// SubmitDuelResult — POST /api/v1/rooms/:code/result
+func SubmitDuelResult(c *gin.Context) {
+	code := strings.ToUpper(c.Param("code"))
+	var req struct {
+		PlayerUID string  `json:"player_uid" binding:"required"`
+		PlayerNum int     `json:"player_num" binding:"required,oneof=1 2"`
+		Score     float64 `json:"score"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": response.FormatBindError(err)})
+		return
+	}
+
+	// Compute score server-side from game_sessions if possible
+	computedScore := req.Score // fallback to client score
+	var participant model.Participant
+	if err := config.DB.Where("uid = ?", req.PlayerUID).First(&participant).Error; err == nil {
+		var session model.GameSession
+		batchID := uint(1)
+		config.DB.Model(&model.EventBatch{}).Where("is_active = ?", true).Select("id").Scan(&batchID)
+		if err := config.DB.Where("participant_id = ? AND event_batch_id = ? AND mode = ?", participant.ID, batchID, "competition").Order("created_at DESC").First(&session).Error; err == nil {
+			if session.Score > 0 {
+				computedScore = session.Score
+			}
+		}
+	}
+
+	room, matchStatus, err := SubmitDuelResultDB(code, req.PlayerUID, req.PlayerNum, computedScore)
+	if err != nil {
+		if err.Error() == "room is not in playing state" {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+		return
+	}
+
+	result := gin.H{
+		"room_id":       room.ID,
+		"match_status":  matchStatus,
+		"player1_score": room.Player1Score,
+		"player2_score": room.Player2Score,
+	}
+	if matchStatus == "decided" {
+		result["winner"] = room.Winner
+		// Broadcast match_result via WS so players get instant notification
+		if wsManager != nil {
+			msg, _ := json.Marshal(websocket.GameMessage{
+				Type:    "match_result",
+				Winner:  room.Winner,
+				P1Score: room.Player1Score,
+				P2Score: room.Player2Score,
+			})
+			wsManager.BroadcastToRoom(room.ID, msg)
+		}
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// GetDuelResult — GET /api/v1/rooms/:code/result
+func GetDuelResult(c *gin.Context) {
+	code := strings.ToUpper(c.Param("code"))
+	room, err := GetDuelResultDB(code)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Room not found"})
+		return
+	}
+
+	result := gin.H{
+		"room_id":       room.ID,
+		"status":        room.Status,
+		"player1_name":  room.Player1Name,
+		"player2_name":  room.Player2Name,
+		"player1_score": room.Player1Score,
+		"player2_score": room.Player2Score,
+	}
+	if room.Winner != "" {
+		result["winner"] = room.Winner
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // GameEvent — POST /api/v1/game/event

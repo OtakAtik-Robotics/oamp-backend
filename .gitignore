@@ -34,3 +34,5 @@ go.work.sum
 # Claude Code
 CLAUDE.md
 .claude/
+COMMAND.md
+AGENTS.md

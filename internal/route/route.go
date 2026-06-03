@@ -40,9 +40,13 @@ func SetupRoutes(r *gin.Engine) {
 	// Health check
 	r.GET("/health", controller.HealthCheck)
 
-	// WebSocket — outside API group (no body limit, no rate limit)
 	wsManager := websocket.NewManager()
+
+	// WebSocket — outside API group (no body limit, no rate limit)
 	r.GET("/ws/match/:room_id", websocket.HandleWebSocket(wsManager))
+
+	// Set WS manager for use by room controller (broadcast match_start, etc.)
+	controller.SetWSManager(wsManager)
 
 	// Game client compatibility routes (mirrors web-server-api, no v1 prefix)
 	r.POST("/api/game/event", controller.GameEvent)
@@ -54,6 +58,8 @@ func SetupRoutes(r *gin.Engine) {
 	r.POST("/api/rooms/:code/join", controller.JoinRoom)
 	r.POST("/api/rooms/:code/leave", controller.LeaveRoom)
 	r.POST("/api/rooms/:code/ready", controller.SetReady)
+	r.POST("/api/rooms/:code/result", controller.SubmitDuelResult)
+	r.GET("/api/rooms/:code/result", controller.GetDuelResult)
 
 	// Tournament active-match lookup for desktop client (compat, no v1 prefix)
 	r.GET("/api/tournaments/active-match/:uid", controller.GetActiveMatchByUID)
@@ -103,6 +109,8 @@ func SetupRoutes(r *gin.Engine) {
 		api.POST("/rooms/:code/join", controller.JoinRoom)
 		api.POST("/rooms/:code/leave", controller.LeaveRoom)
 		api.POST("/rooms/:code/ready", controller.SetReady)
+		api.POST("/rooms/:code/result", controller.SubmitDuelResult)
+		api.GET("/rooms/:code/result", controller.GetDuelResult)
 
 		// Game event (desktop app — join_room, level_start, level_complete, leave_room)
 		api.POST("/game/event", controller.GameEvent)

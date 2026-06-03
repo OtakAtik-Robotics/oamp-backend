@@ -3,6 +3,7 @@ package websocket
 import (
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,9 @@ func HandleWebSocket(m *Manager) gin.HandlerFunc {
 		roomID := c.Param("room_id")
 		role := c.DefaultQuery("role", "spectator")
 		playerID := c.Query("player_id")
+		playerName := c.Query("player_name")
+		playerNumStr := c.DefaultQuery("player_num", "0")
+		playerNum, _ := strconv.Atoi(playerNumStr)
 
 		if playerID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "player_id required"})
@@ -34,16 +38,16 @@ func HandleWebSocket(m *Manager) gin.HandlerFunc {
 			return
 		}
 
-		client := m.JoinRoom(roomID, playerID, role, conn)
+		client := m.JoinRoom(roomID, playerID, playerName, role, playerNum, conn)
 		if client == nil {
 			return
 		}
 		defer m.LeaveRoom(roomID, client)
 
-		conn.SetReadLimit(4096)
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		conn.SetReadLimit(65536)
+		conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 		conn.SetPongHandler(func(string) error {
-			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			conn.SetReadDeadline(time.Now().Add(120 * time.Second))
 			return nil
 		})
 

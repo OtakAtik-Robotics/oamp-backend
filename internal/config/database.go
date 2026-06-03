@@ -67,6 +67,11 @@ func ConnectDB() {
 	// Raw SQL migrations for columns AutoMigrate may miss
 	db.Exec(`ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS score DOUBLE PRECISION DEFAULT 0`)
 	db.Exec(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS spo2 DOUBLE PRECISION`)
+	db.Exec(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS player1_uid VARCHAR(50) DEFAULT ''`)
+	db.Exec(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS player2_uid VARCHAR(50) DEFAULT ''`)
+	db.Exec(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS player1_score DOUBLE PRECISION DEFAULT 0`)
+	db.Exec(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS player2_score DOUBLE PRECISION DEFAULT 0`)
+	db.Exec(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS winner VARCHAR(10) DEFAULT ''`)
 
 	DB = db
 

@@ -470,3 +470,227 @@ func TestGameEventHTTP_MissingFields(t *testing.T) {
 		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
+
+func TestSubmitDuelResultDB_Player1Submits(t *testing.T) {
+	setupTestDB(t)
+	defer cleanupTestDB()
+
+	// Create participants so UID verification passes
+	config.DB.Create(&model.Participant{UID: "UID001", Name: "Alice", Age: 10, Grade: "4", Gender: "male", Height: 140, Weight: 35})
+	config.DB.Create(&model.Participant{UID: "UID002", Name: "Bob", Age: 11, Grade: "5", Gender: "male", Height: 145, Weight: 38})
+
+	room, _ := CreateRoomDB("Alice")
+	JoinRoomDB(room.ID, "Bob")
+	SetReadyDB(room.ID, "Alice")
+	SetReadyDB(room.ID, "Bob")
+
+	updated, matchStatus, err := SubmitDuelResultDB(room.ID, "UID001", 1, 77.5)
+	if err != nil {
+		t.Fatalf("SubmitDuelResultDB failed: %v", err)
+	}
+	if matchStatus != "waiting" {
+		t.Errorf("expected match_status waiting, got %s", matchStatus)
+	}
+	if updated.Player1Score != 77.5 {
+		t.Errorf("expected player1_score 77.5, got %f", updated.Player1Score)
+	}
+	if updated.Status != "playing" {
+		t.Errorf("expected room still playing, got %s", updated.Status)
+	}
+}
+
+func TestSubmitDuelResultDB_BothSubmit_Player1Wins(t *testing.T) {
+	setupTestDB(t)
+	defer cleanupTestDB()
+
+	config.DB.Create(&model.Participant{UID: "UID001", Name: "Alice", Age: 10, Grade: "4", Gender: "male", Height: 140, Weight: 35})
+	config.DB.Create(&model.Participant{UID: "UID002", Name: "Bob", Age: 11, Grade: "5", Gender: "male", Height: 145, Weight: 38})
+
+	room, _ := CreateRoomDB("Alice")
+	JoinRoomDB(room.ID, "Bob")
+	SetReadyDB(room.ID, "Alice")
+	SetReadyDB(room.ID, "Bob")
+
+	SubmitDuelResultDB(room.ID, "UID001", 1, 80.0)
+	updated, matchStatus, err := SubmitDuelResultDB(room.ID, "UID002", 2, 60.0)
+	if err != nil {
+		t.Fatalf("SubmitDuelResultDB failed: %v", err)
+	}
+	if matchStatus != "decided" {
+		t.Errorf("expected match_status decided, got %s", matchStatus)
+	}
+	if updated.Winner != "1" {
+		t.Errorf("expected winner 1, got %s", updated.Winner)
+	}
+	if updated.Status != "finished" {
+		t.Errorf("expected status finished, got %s", updated.Status)
+	}
+}
+
+func TestSubmitDuelResultDB_BothSubmit_Player2Wins(t *testing.T) {
+	setupTestDB(t)
+	defer cleanupTestDB()
+
+	config.DB.Create(&model.Participant{UID: "UID001", Name: "Alice", Age: 10, Grade: "4", Gender: "male", Height: 140, Weight: 35})
+	config.DB.Create(&model.Participant{UID: "UID002", Name: "Bob", Age: 11, Grade: "5", Gender: "male", Height: 145, Weight: 38})
+
+	room, _ := CreateRoomDB("Alice")
+	JoinRoomDB(room.ID, "Bob")
+	SetReadyDB(room.ID, "Alice")
+	SetReadyDB(room.ID, "Bob")
+
+	SubmitDuelResultDB(room.ID, "UID001", 1, 50.0)
+	updated, matchStatus, err := SubmitDuelResultDB(room.ID, "UID002", 2, 90.0)
+	if err != nil {
+		t.Fatalf("SubmitDuelResultDB failed: %v", err)
+	}
+	if matchStatus != "decided" {
+		t.Errorf("expected match_status decided, got %s", matchStatus)
+	}
+	if updated.Winner != "2" {
+		t.Errorf("expected winner 2, got %s", updated.Winner)
+	}
+}
+
+func TestSubmitDuelResultDB_BothSubmit_Draw(t *testing.T) {
+	setupTestDB(t)
+	defer cleanupTestDB()
+
+	config.DB.Create(&model.Participant{UID: "UID001", Name: "Alice", Age: 10, Grade: "4", Gender: "male", Height: 140, Weight: 35})
+	config.DB.Create(&model.Participant{UID: "UID002", Name: "Bob", Age: 11, Grade: "5", Gender: "male", Height: 145, Weight: 38})
+
+	room, _ := CreateRoomDB("Alice")
+	JoinRoomDB(room.ID, "Bob")
+	SetReadyDB(room.ID, "Alice")
+	SetReadyDB(room.ID, "Bob")
+
+	SubmitDuelResultDB(room.ID, "UID001", 1, 75.0)
+	updated, matchStatus, err := SubmitDuelResultDB(room.ID, "UID002", 2, 75.0)
+	if err != nil {
+		t.Fatalf("SubmitDuelResultDB failed: %v", err)
+	}
+	if matchStatus != "decided" {
+		t.Errorf("expected match_status decided, got %s", matchStatus)
+	}
+	if updated.Winner != "draw" {
+		t.Errorf("expected winner draw, got %s", updated.Winner)
+	}
+}
+
+func TestSubmitDuelResultDB_NotPlaying(t *testing.T) {
+	setupTestDB(t)
+	defer cleanupTestDB()
+
+	room, _ := CreateRoomDB("Alice")
+
+	_, _, err := SubmitDuelResultDB(room.ID, "UID001", 1, 80.0)
+	if err == nil || err.Error() != "room is not in playing state" {
+		t.Errorf("expected 'room is not in playing state' error, got %v", err)
+	}
+}
+
+func TestSubmitDuelResultDB_InvalidPlayerNum(t *testing.T) {
+	setupTestDB(t)
+	defer cleanupTestDB()
+
+	config.DB.Create(&model.Participant{UID: "UID001", Name: "Alice", Age: 10, Grade: "4", Gender: "male", Height: 140, Weight: 35})
+
+	room, _ := CreateRoomDB("Alice")
+	JoinRoomDB(room.ID, "Bob")
+	SetReadyDB(room.ID, "Alice")
+	SetReadyDB(room.ID, "Bob")
+
+	_, _, err := SubmitDuelResultDB(room.ID, "UID001", 3, 80.0)
+	if err == nil || err.Error() != "player_num must be 1 or 2" {
+		t.Errorf("expected 'player_num must be 1 or 2' error, got %v", err)
+	}
+}
+
+func TestGetDuelResultDB(t *testing.T) {
+	setupTestDB(t)
+	defer cleanupTestDB()
+
+	config.DB.Create(&model.Participant{UID: "UID001", Name: "Alice", Age: 10, Grade: "4", Gender: "male", Height: 140, Weight: 35})
+	config.DB.Create(&model.Participant{UID: "UID002", Name: "Bob", Age: 11, Grade: "5", Gender: "male", Height: 145, Weight: 38})
+
+	room, _ := CreateRoomDB("Alice")
+	JoinRoomDB(room.ID, "Bob")
+	SetReadyDB(room.ID, "Alice")
+	SetReadyDB(room.ID, "Bob")
+	SubmitDuelResultDB(room.ID, "UID001", 1, 80.0)
+	SubmitDuelResultDB(room.ID, "UID002", 2, 60.0)
+
+	result, err := GetDuelResultDB(room.ID)
+	if err != nil {
+		t.Fatalf("GetDuelResultDB failed: %v", err)
+	}
+	if result.Winner != "1" {
+		t.Errorf("expected winner 1, got %s", result.Winner)
+	}
+	if result.Status != "finished" {
+		t.Errorf("expected status finished, got %s", result.Status)
+	}
+}
+
+func TestSubmitDuelResultHTTP(t *testing.T) {
+	setupTestDB(t)
+	defer cleanupTestDB()
+
+	config.DB.Create(&model.Participant{UID: "UID001", Name: "Alice", Age: 10, Grade: "4", Gender: "male", Height: 140, Weight: 35})
+	config.DB.Create(&model.Participant{UID: "UID002", Name: "Bob", Age: 11, Grade: "5", Gender: "male", Height: 145, Weight: 38})
+
+	room, _ := CreateRoomDB("Alice")
+	JoinRoomDB(room.ID, "Bob")
+	SetReadyDB(room.ID, "Alice")
+	SetReadyDB(room.ID, "Bob")
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.POST("/rooms/:code/result", SubmitDuelResult)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"player_uid": "UID001",
+		"player_num": 1,
+		"score":      80.0,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/rooms/"+room.ID+"/result", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetDuelResultHTTP(t *testing.T) {
+	setupTestDB(t)
+	defer cleanupTestDB()
+
+	config.DB.Create(&model.Participant{UID: "UID001", Name: "Alice", Age: 10, Grade: "4", Gender: "male", Height: 140, Weight: 35})
+	config.DB.Create(&model.Participant{UID: "UID002", Name: "Bob", Age: 11, Grade: "5", Gender: "male", Height: 145, Weight: 38})
+
+	room, _ := CreateRoomDB("Alice")
+	JoinRoomDB(room.ID, "Bob")
+	SetReadyDB(room.ID, "Alice")
+	SetReadyDB(room.ID, "Bob")
+	SubmitDuelResultDB(room.ID, "UID001", 1, 80.0)
+	SubmitDuelResultDB(room.ID, "UID002", 2, 60.0)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/rooms/:code/result", GetDuelResult)
+
+	req := httptest.NewRequest(http.MethodGet, "/rooms/"+room.ID+"/result", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["winner"] != "1" {
+		t.Errorf("expected winner 1, got %v", resp["winner"])
+	}
+}

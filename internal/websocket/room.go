@@ -9,18 +9,21 @@ import (
 )
 
 type Client struct {
-	Conn     *websocket.Conn
-	PlayerID string
-	Role     string // "player" or "spectator"
-	Send     chan []byte
+	Conn       *websocket.Conn
+	PlayerID   string
+	PlayerName string
+	Role       string // "player" or "spectator"
+	PlayerNum  int    // 1 or 2 (only for role="player")
+	Send       chan []byte
 }
 
 type Room struct {
-	ID         string
-	Players    map[string]*Client // max 2
-	Spectators map[string]*Client
-	GameOvers  int // track how many players finished
-	mu         sync.RWMutex
+	ID          string
+	Players     map[string]*Client // max 2
+	Spectators  map[string]*Client
+	ReadyCount  int // how many players sent "player_ready" via WS
+	GameOvers   int
+	mu          sync.RWMutex
 }
 
 func newRoom(id string) *Room {
@@ -38,6 +41,21 @@ func (r *Room) addClient(c *Client) bool {
 	if c.Role == "player" {
 		if len(r.Players) >= 2 {
 			return false
+		}
+		// Assign player number
+		if c.PlayerNum == 0 {
+			// Auto-assign: P1 if slot empty, else P2
+			hasP1 := false
+			for _, p := range r.Players {
+				if p.PlayerNum == 1 {
+					hasP1 = true
+				}
+			}
+			if !hasP1 {
+				c.PlayerNum = 1
+			} else {
+				c.PlayerNum = 2
+			}
 		}
 		r.Players[c.PlayerID] = c
 	} else {
@@ -71,6 +89,19 @@ func (r *Room) broadcastToSpectators(payload []byte) {
 	}
 }
 
+func (r *Room) broadcastToPlayers(payload []byte) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, p := range r.Players {
+		select {
+		case p.Send <- payload:
+		default:
+			log.Printf("[ws] player %s send buffer full, dropping", p.PlayerID)
+		}
+	}
+}
+
 func (r *Room) broadcastAll(payload []byte) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -89,6 +120,34 @@ func (r *Room) broadcastAll(payload []byte) {
 	}
 }
 
+func (r *Room) sendToPlayer(playerNum int, payload []byte) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, p := range r.Players {
+		if p.PlayerNum == playerNum {
+			select {
+			case p.Send <- payload:
+			default:
+				log.Printf("[ws] player %s send buffer full, dropping", p.PlayerID)
+			}
+			return
+		}
+	}
+}
+
+func (r *Room) getPlayerByNum(playerNum int) *Client {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, p := range r.Players {
+		if p.PlayerNum == playerNum {
+			return p
+		}
+	}
+	return nil
+}
+
 func (r *Room) writePump(c *Client) {
 	defer c.Conn.Close()
 	for msg := range c.Send {
@@ -99,11 +158,20 @@ func (r *Room) writePump(c *Client) {
 }
 
 type GameMessage struct {
-	Type       string  `json:"type"`       // "score_update", "join", "leave", "GAME_OVER"
-	PlayerID   string  `json:"player_id"`
-	GameScore  int     `json:"game_score,omitempty"`
-	BlocksHit  int     `json:"blocks_hit,omitempty"`
+	Type        string   `json:"type"`
+	PlayerID    string   `json:"player_id,omitempty"`
+	PlayerName  string   `json:"player_name,omitempty"`
+	PlayerNum   int      `json:"player_num,omitempty"`
+	GameScore   int      `json:"game_score,omitempty"`
+	BlocksHit   int      `json:"blocks_hit,omitempty"`
 	PlayDuration float64 `json:"play_duration,omitempty"`
+	Winner      string   `json:"winner,omitempty"`
+	P1Score     float64  `json:"p1_score,omitempty"`
+	P2Score     float64  `json:"p2_score,omitempty"`
+	Status      string   `json:"status,omitempty"`
+	Player1Name string   `json:"player1_name,omitempty"`
+	Player2Name string   `json:"player2_name,omitempty"`
+	RoomID      string   `json:"room_id,omitempty"`
 }
 
 type Manager struct {
@@ -117,7 +185,7 @@ func NewManager() *Manager {
 	}
 }
 
-func (m *Manager) JoinRoom(roomID, playerID, role string, conn *websocket.Conn) *Client {
+func (m *Manager) JoinRoom(roomID, playerID, playerName, role string, playerNum int, conn *websocket.Conn) *Client {
 	m.mu.Lock()
 	room, ok := m.rooms[roomID]
 	if !ok {
@@ -127,10 +195,12 @@ func (m *Manager) JoinRoom(roomID, playerID, role string, conn *websocket.Conn) 
 	m.mu.Unlock()
 
 	client := &Client{
-		Conn:     conn,
-		PlayerID: playerID,
-		Role:     role,
-		Send:     make(chan []byte, 64),
+		Conn:       conn,
+		PlayerID:   playerID,
+		PlayerName: playerName,
+		Role:       role,
+		PlayerNum:  playerNum,
+		Send:       make(chan []byte, 64),
 	}
 
 	if !room.addClient(client) {
@@ -141,12 +211,13 @@ func (m *Manager) JoinRoom(roomID, playerID, role string, conn *websocket.Conn) 
 
 	go room.writePump(client)
 
-	// Notify spectators of join
 	joinMsg, _ := json.Marshal(GameMessage{
-		Type:     "join",
-		PlayerID: playerID,
+		Type:       "join",
+		PlayerID:   playerID,
+		PlayerName: playerName,
+		PlayerNum:  client.PlayerNum,
 	})
-	room.broadcastToSpectators(joinMsg)
+	room.broadcastAll(joinMsg)
 
 	return client
 }
@@ -165,14 +236,39 @@ func (m *Manager) HandlePlayerMessage(roomID string, client *Client, raw []byte)
 		return
 	}
 	msg.PlayerID = client.PlayerID
+	msg.PlayerNum = client.PlayerNum
+	msg.PlayerName = client.PlayerName
 
-	if msg.Type == "GAME_OVER" {
+	switch msg.Type {
+	case "player_ready":
+		m.handlePlayerReady(room, client)
+
+	case "score_update":
+		broadcast, _ := json.Marshal(msg)
+		room.broadcastAll(broadcast)
+
+	case "GAME_OVER":
 		m.handleGameOver(room, client, &msg)
-		return
-	}
 
-	// Player msg → forward exact JSON to spectators
-	room.broadcastToSpectators(raw)
+	default:
+		broadcast, _ := json.Marshal(msg)
+		room.broadcastToSpectators(broadcast)
+	}
+}
+
+func (m *Manager) handlePlayerReady(room *Room, client *Client) {
+	room.mu.Lock()
+	room.ReadyCount++
+	readyCount := room.ReadyCount
+	room.mu.Unlock()
+
+	if readyCount >= 2 {
+		startMsg, _ := json.Marshal(GameMessage{
+			Type:  "match_start",
+			RoomID: room.ID,
+		})
+		room.broadcastAll(startMsg)
+	}
 }
 
 func (m *Manager) handleGameOver(room *Room, client *Client, msg *GameMessage) {
@@ -189,6 +285,17 @@ func (m *Manager) handleGameOver(room *Room, client *Client, msg *GameMessage) {
 	}
 }
 
+func (m *Manager) BroadcastToRoom(roomID string, payload []byte) {
+	m.mu.RLock()
+	room, ok := m.rooms[roomID]
+	m.mu.RUnlock()
+
+	if !ok {
+		return
+	}
+	room.broadcastAll(payload)
+}
+
 func (m *Manager) destroyRoom(roomID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -198,7 +305,6 @@ func (m *Manager) destroyRoom(roomID string) {
 		return
 	}
 
-	// Close all connections
 	room.mu.Lock()
 	for _, c := range room.Players {
 		close(c.Send)
@@ -222,13 +328,14 @@ func (m *Manager) LeaveRoom(roomID string, client *Client) {
 	}
 
 	leaveMsg, _ := json.Marshal(GameMessage{
-		Type:     "leave",
-		PlayerID: client.PlayerID,
+		Type:       "leave",
+		PlayerID:   client.PlayerID,
+		PlayerName: client.PlayerName,
+		PlayerNum:  client.PlayerNum,
 	})
-	room.broadcastToSpectators(leaveMsg)
+	room.broadcastAll(leaveMsg)
 	room.removeClient(client)
 
-	// Cleanup empty room
 	m.mu.Lock()
 	room.mu.RLock()
 	empty := len(room.Players) == 0 && len(room.Spectators) == 0
