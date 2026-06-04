@@ -1,6 +1,6 @@
 # OAMP Backend
 
-REST API server for the OAMP cognitive measurement platform. Handles participant registration, Midtrans payment, game sessions, 1v1 WebSocket matchmaking, tournaments, leaderboard, AI health analysis, quiz, and report exports (Excel/PDF).
+REST API + WebSocket server for the OAMP cognitive assessment platform. Handles participant registration, Midtrans payment, game sessions, 1v1 duel matchmaking, tournaments, leaderboard, AI health analysis, quiz, and report exports.
 
 ## Tech Stack
 
@@ -28,9 +28,9 @@ internal/
     ratelimit.go                # Per-IP rate limiter (10 req/sec, burst 30)
     bodylimit.go                # Request body size limit (2MB)
   controller/
-    participant.go              # Register, list, lookup, get by UID, delete participant
+    participant.go              # Register, list, lookup, get by UID, delete
     game.go                     # Game result submission (competition/training)
-    room_controller.go          # Room CRUD, join, leave, ready, stale cleanup
+    room_controller.go          # Room CRUD, join, leave, ready, stale cleanup, duel result
     leaderboard.go              # CTF-style leaderboard + timeline
     export.go                   # Excel, PDF, per-participant rapor
     batches.go                  # Event batch CRUD + activate
@@ -41,7 +41,7 @@ internal/
   websocket/
     room.go                     # WS room manager: players + spectators, GAME_OVER persistence
     handler.go                  # WS endpoint /ws/match/:room_id
-  model/model.go                # GORM models: Participant, GameSession, PureGameResult, etc.
+  model/model.go                # GORM models: Participant, GameSession, Room, TournamentMatch, etc.
   route/route.go                # Route definitions, CORS, middleware registration
 pkg/
   response/response.go          # Standardized JSON response helpers + validation formatter
@@ -63,28 +63,15 @@ migrations/                     # golang-migrate SQL migrations
 
 ### Setup
 
-1. **Install dependencies:**
-   ```bash
-   go mod tidy
-   ```
+```bash
+go mod tidy
+createdb oamp
+cp .env.example .env
+# Edit .env with your database credentials and AI provider settings
+go run ./cmd/api
+```
 
-2. **Create database:**
-   ```bash
-   createdb oamp
-   ```
-
-3. **Configure environment:**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your database credentials and AI provider settings
-   ```
-
-4. **Run the server:**
-   ```bash
-   go run ./cmd/api
-   ```
-
-   Tables are created via golang-migrate + GORM AutoMigrate on startup.
+Tables are created via golang-migrate + GORM AutoMigrate on startup.
 
 ### Build
 
@@ -100,7 +87,7 @@ go test ./...                              # run all tests
 go test -run TestName ./path/to/package    # single test
 ```
 
-Controller tests use an in-memory SQLite database. No external DB needed for testing.
+Controller tests use in-memory SQLite. No external DB needed.
 
 ---
 
@@ -131,11 +118,11 @@ Controller tests use an in-memory SQLite database. No external DB needed for tes
 |----------|-------------|---------|
 | `AI_PROVIDER` | LLM provider name | `openai`, `gemini`, `claude`, `minimax` |
 | `AI_API_KEY` | API key for the provider | — |
-| `AI_MODEL` | Model identifier | Provider-specific (see below) |
-| `AI_BASE_URL` | Custom API base URL (optional) | For OpenAI-compatible proxies (DeepSeek, Kimi, Ollama) |
-| `MINIMAX_GROUP_ID` | Minimax group ID (required for Minimax only) | — |
+| `AI_MODEL` | Model identifier | Provider-specific |
+| `AI_BASE_URL` | Custom API base URL (optional) | For OpenAI-compatible proxies |
+| `MINIMAX_GROUP_ID` | Minimax group ID (Minimax only) | — |
 
-#### Model Reference by Provider
+### Model Reference by Provider
 
 | Provider | Default Model | Notes |
 |----------|---------------|-------|
@@ -183,7 +170,7 @@ AI_BASE_URL=https://api.deepseek.com
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/v1/game/submit` | Submit game result (premium-gated) |
+| POST | `/api/v1/game/submit` | Submit game result (validation: task times 0-600s, visuo_spatial 0-100, cognitive_age 0-120) |
 | POST | `/api/v1/game/event` | Desktop game event (join_room, level_start, heartbeat, etc.) |
 
 ### Rooms & Match
@@ -196,13 +183,15 @@ AI_BASE_URL=https://api.deepseek.com
 | POST | `/api/v1/rooms/:code/join` | Join room as player 2 |
 | POST | `/api/v1/rooms/:code/leave` | Leave room |
 | POST | `/api/v1/rooms/:code/ready` | Mark player ready |
+| POST | `/api/v1/rooms/:code/result` | Submit duel result (server-side score computation, dual submission) |
+| GET | `/api/v1/rooms/:code/result` | Get duel result (winner + scores) |
 | WS | `/ws/match/:room_id` | WebSocket match spectator |
 
 ### Leaderboard & Stats
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/leaderboard` | CTF-style top 10 leaderboard |
+| GET | `/api/v1/leaderboard` | CTF-style top 10 leaderboard (`?mode=training\|competition&batch_id=N`) |
 | GET | `/api/v1/leaderboard/timeline` | Timeline data (max 200 entries) |
 
 ### Event Batches
@@ -253,8 +242,10 @@ AI_BASE_URL=https://api.deepseek.com
 | POST | `/api/rooms/:code/join` | Join room |
 | POST | `/api/rooms/:code/leave` | Leave room |
 | POST | `/api/rooms/:code/ready` | Set ready |
+| POST | `/api/rooms/:code/result` | Submit duel result |
+| GET | `/api/rooms/:code/result` | Get duel result |
 | GET | `/api/tournaments/active-match/:uid` | Active cup match by UID |
-| POST | `/api/tournaments/event` | Tournament event (match_started/finished) |
+| POST | `/api/tournaments/event` | Tournament event (match_started / match_finished) |
 
 ---
 
@@ -283,13 +274,13 @@ AI_BASE_URL=https://api.deepseek.com
 ┌──────────────────────────────────────────────────────────────────────┐
 │  3. GAME PLAY (3 paths)                                               │
 │                                                                       │
-│  Desktop Client              1v1 Match                Tournament Cup  │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐    │
-│  │ POST /game/submit│  │ WS /ws/match/:id │  │ POST /tournaments│    │
-│  │ POST /game/event │  │ POST /rooms/...  │  │   /:id/start     │    │
-│  │ GET /...uid/:uid │  │ GAME_OVER → DB   │  │   /:id/matches/  │    │
-│  └──────────────────┘  └──────────────────┘  │   /:mid/result   │    │
-│                                               └──────────────────┘    │
+│  Desktop Client              1v1 Match              Tournament Cup    │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  │
+│  │ POST /game/submit│  │ WS /ws/match/:id │  │ POST /tournaments│  │
+│  │ POST /game/event │  │ POST /rooms/...  │  │   /:id/start     │  │
+│  │ GET /...uid/:uid│  │ GAME_OVER → DB   │  │   /:id/matches/  │  │
+│  └──────────────────┘  └──────────────────┘  │   /:mid/result   │  │
+│                                               └──────────────────┘  │
 └──────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼
@@ -306,29 +297,25 @@ AI_BASE_URL=https://api.deepseek.com
 
 ---
 
-## 1v1 Match Architecture (WebSocket)
+## Duel Result Flow (Anti-Cheat)
 
 ```
-Player 1 (P1)                           Player 2 (P2)
-  │                                        │
-  │──── POST /rooms ──────────────────────▶│  Create room, get 4-char code
-  │                                        │
-  │◀──── code: "AB12" ─────────────────────│
-  │                                        │
-  │──── WS /ws/match/AB12?role=player ────▶│  Both players connect WS
-  │──── &player_id=P1 ─────────────────────▶│
-  │                                        │
-  │◀──── /rooms/AB12/join ────────────────▶│  P2 joins with player_name
-  │                                        │
-  │──── POST /rooms/AB12/ready ───────────▶│  Both call ready → status="playing"
-  │                                        │
-  │◀──── status="playing" ────────────────▶│
-  │                                        │
-  │   Real-time score broadcast via WS      │
-  │   P1 sends GAME_OVER ───────────────▶│
-  │   → persist PureGameResult to DB       │
-  │   Room destroyed when both finish      │
-  └────────────────────────────────────────┘
+Desktop Client (P1)                     Server                              Desktop Client (P2)
+     │                                      │                                      │
+     │── POST /game/submit ────────────────▶│  Saves GameSession                   │
+     │   { uid, mode, task01-08, ... }     │  Computes server-side score          │
+     │                                      │  using same formula                  │
+     │                                      │                                      │
+     │── POST /rooms/AB12/result ──────────▶│  Looks up GameSession               │
+     │   { player_uid, player_num, score } │  Uses server score if > 0            │
+     │                                      │  Sets player1_submitted = true       │
+     │                                      │                                      │
+     │                                      │◀── POST /rooms/AB12/result ────────│
+     │                                      │  Sets player2_submitted = true       │
+     │                                      │  Both submitted → determines winner   │
+     │                                      │  Broadcasts match_result via WS      │
+     │◀──── WS match_result ───────────────│────── WS match_result ─────────────▶│
+     │  { winner, p1_score, p2_score }      │                                      │
 ```
 
 ---
@@ -343,26 +330,30 @@ score = (level_reached × 10) + (visuo_spatial_fit × 50) + (dexterity_score × 
 |--------|--------|-------|
 | `level_reached` (1-8) | ×10 | 10-80 |
 | `visuo_spatial_fit` (0-1) | ×50 | 0-50 |
-| `dexterity_score` (0-100) | ×0.2 | 0-20 |
+| `dexterity_score` (0-2, capped) | ×0.2 | 0-20 |
 
 **Total range: 10-150**
+
+Server computes this identically in `saveGameSession` and the leaderboard SQL query.
 
 ---
 
 ## Security
 
-- **Rate limiting:** Per-IP, 10 requests/sec with burst of 30.
-- **Body size limit:** 2MB max request body.
-- **Input validation:** All endpoints validated via Gin binding tags + go-playground/validator.
-- **Clean error messages:** Validation errors formatted without leaking internal struct details.
-- **Filename sanitization:** Export filenames stripped of special characters via regex.
-- **Graceful degradation:** AI analysis returns HTTP 200 with fallback message on failure (never 500).
-- **CORS:** AllowAllOrigins.
-- **Database transactions:** Game session submission uses `tx.Begin()` with rollback.
-- **Webhook signature validation:** Midtrans notifications verified via SHA512.
-- **Payment gate:** Game submission and AI analysis require `is_premium = true`.
-- **Telegram alerts:** Real-time payment notifications sent async.
-- **Midtrans logs suppressed:** ServerKey not leaked in debug output.
+- **Rate limiting:** Per-IP, 10 requests/sec with burst of 30
+- **Body size limit:** 2MB max request body
+- **Input validation:** All endpoints validated via Gin binding tags + go-playground/validator. Game results: task times 0-600s, visuo_spatial 0-100, cognitive_age 0-120
+- **Clean error messages:** Validation errors formatted without leaking internal struct details
+- **Filename sanitization:** Export filenames stripped of special characters
+- **Graceful degradation:** AI analysis returns HTTP 200 with fallback message on failure (never 500)
+- **CORS:** AllowAllOrigins
+- **Database transactions:** Game session submission uses `tx.Begin()` with rollback
+- **Webhook signature validation:** Midtrans notifications verified via SHA512
+- **Payment gate:** Game submission and AI analysis require `is_premium = true`
+- **Dual submission:** Room and tournament results require both players to submit before determining winner
+- **Server-side score computation:** Duel results use server-computed scores from GameSession, not client-provided values
+- **Identity verification:** `SubmitDuelResultDB` verifies player UID matches registered participant + room player name
+- **Midtrans logs suppressed:** ServerKey not leaked in debug output
 
 ## Related Repositories
 
