@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"log"
 	"net/http"
 
 	"oamp-backend/internal/config"
@@ -12,8 +13,8 @@ import (
 
 // SubmitGameResult — POST /api/v1/game/submit
 // Accepts game client payload (bracelet UID scan → store task results)
-// mode: "training" → game_results + game_sessions (leaderboard training)
-// mode: "competition" → game_results + game_sessions (leaderboard competition)
+// Every submission creates a NEW GameSession row (appends, never replaces).
+// Leaderboard picks best per participant via DISTINCT ON / LATERAL LIMIT 1.
 func SubmitGameResult(c *gin.Context) {
 	var result model.GameResult
 	if err := c.ShouldBindJSON(&result); err != nil {
@@ -43,7 +44,7 @@ func SubmitGameResult(c *gin.Context) {
 
 	// Save to game_sessions for both training and competition (leaderboard)
 	if err := saveGameSession(&result, participant.ID); err != nil {
-		// log but don't fail the request — game_results was saved successfully
+		log.Printf("[WARN] saveGameSession failed for uid=%s: %v", result.UID, err)
 	}
 
 	response.CreatedWithMessage(c, "Game result recorded", gin.H{
@@ -82,7 +83,8 @@ func saveGameResult(result *model.GameResult) {
 	)
 }
 
-// saveGameSession computes leaderboard fields and inserts into game_sessions
+// saveGameSession computes leaderboard fields and appends a new row into game_sessions.
+// Each submission creates a new record — history accumulates, leaderboard picks best.
 func saveGameSession(result *model.GameResult, participantID uint) error {
 	// Count completed levels (non-zero tasks)
 	levelReached := 0
@@ -142,8 +144,6 @@ func saveGameSession(result *model.GameResult, participantID uint) error {
 		Score:           score,
 	}
 
-	// Upsert: delete existing session for same participant+batch+mode, then insert new
-	config.DB.Exec(`DELETE FROM game_sessions WHERE participant_id = ? AND event_batch_id = ? AND mode = ?`, participantID, batchID, result.Mode)
 	return config.DB.Create(&session).Error
 }
 

@@ -30,16 +30,17 @@ func (a Float64Array) Value() (driver.Value, error) {
 
 type Participant struct {
 	ID                uint      `json:"id" gorm:"primaryKey"`
-	UID               string    `json:"uid" binding:"required" gorm:"uniqueIndex;not null"`
+	UID               string    `json:"uid" binding:"omitempty" gorm:"uniqueIndex;not null"`
 	Name              string    `json:"name" binding:"required" gorm:"size:100;not null"`
-	Age               int       `json:"age" binding:"required,gte=3" gorm:"not null"`
+	Age               int       `json:"age" binding:"required,gte=3,lte=150" gorm:"not null"`
 	Grade             string    `json:"grade" binding:"required" gorm:"size:30"`
 	Gender            string    `json:"gender" binding:"required,oneof=male female" gorm:"size:10"`
-	Height            float64   `json:"height" binding:"required,gt=0"`
-	Weight            float64   `json:"weight" binding:"required,gt=0"`
+	Height            float64   `json:"height" binding:"omitempty,gt=0,lte=300"`
+	Weight            float64   `json:"weight" binding:"omitempty,gt=0,lte=500"`
 	HeartRate         int       `json:"heart_rate" binding:"omitempty,gte=40,lte=220"`
 	SpO2              float64   `json:"spo2" binding:"omitempty,gte=0,lte=100"`
-	GripStrength      float64   `json:"grip_strength" binding:"omitempty,gte=0"`
+	GripStrength      float64   `json:"grip_strength" binding:"omitempty,gte=0,lte=200"`
+	Dexterity         float64   `json:"dexterity" binding:"omitempty,gte=0,lte=500"`
 	IsPremium         bool      `json:"is_premium" gorm:"default:false"`
 	AiAnalysis        string    `json:"ai_analysis" gorm:"type:text"`
 	AiAnalysisUpdatedAt *time.Time `json:"ai_analysis_updated_at"`
@@ -47,10 +48,12 @@ type Participant struct {
 }
 
 type EventBatch struct {
-	ID        uint      `json:"id" gorm:"primaryKey"`
-	Name      string    `json:"name" binding:"required" gorm:"size:100;not null"`
-	IsActive  bool      `json:"is_active" gorm:"default:false"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         uint      `json:"id" gorm:"primaryKey"`
+	Name       string    `json:"name" binding:"required" gorm:"size:100;not null"`
+	IsActive   bool      `json:"is_active" gorm:"default:false"`
+	UidPrefix  string    `json:"uid_prefix" gorm:"size:20"`
+	UidCounter int       `json:"uid_counter" gorm:"default:0"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type GameSession struct {

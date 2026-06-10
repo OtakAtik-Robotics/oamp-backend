@@ -76,6 +76,7 @@ func SetupRoutes(r *gin.Engine) {
 		api.DELETE("/participants/:id", controller.DeleteParticipant)
 		api.GET("/participants/lookup/:nickname", controller.LookupParticipant)
 		api.GET("/participants/uid/:uid/sessions", controller.GetParticipantSessions)
+		api.PUT("/participants/uid/:uid", controller.UpdateParticipant)
 
 		// Leaderboard
 		api.GET("/leaderboard", controller.GetLeaderboard)
@@ -88,6 +89,7 @@ func SetupRoutes(r *gin.Engine) {
 
 		// Event Batch management
 		api.GET("/batches", controller.GetBatches)
+		api.GET("/batches/active", controller.GetActiveBatch)
 		api.POST("/batches", controller.CreateBatch)
 		api.PUT("/batches/:id", controller.RenameBatch)
 		api.DELETE("/batches/:id", controller.DeleteBatch)
@@ -114,6 +116,9 @@ func SetupRoutes(r *gin.Engine) {
 
 		// Game event (desktop app — join_room, level_start, level_complete, leave_room)
 		api.POST("/game/event", controller.GameEvent)
+
+		// Station health monitoring
+		api.GET("/stations", controller.GetStations)
 
 		// Participant analysis (AI Health Consultant, premium-gated)
 		api.GET("/participants/analysis/:uid", controller.GetParticipantAnalysis)

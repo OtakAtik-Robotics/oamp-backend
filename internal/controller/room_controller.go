@@ -335,6 +335,18 @@ func UpsertPlayerStateDB(event model.GameEvent) error {
 			// Only player — delete room
 			return tx.Delete(&room).Error
 		})
+
+	case "heartbeat":
+		var ps model.PlayerState
+		err := config.DB.Where("room_id = ? AND player_name = ?", event.RoomID, event.PlayerName).First(&ps).Error
+		if err == nil {
+			return config.DB.Model(&ps).Update("updated_at", time.Now()).Error
+		}
+		ps = model.PlayerState{
+			RoomID:     event.RoomID,
+			PlayerName: event.PlayerName,
+		}
+		return config.DB.Create(&ps).Error
 	}
 	return nil
 }
@@ -679,9 +691,16 @@ func GameEvent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "type, room_id, player_name required"})
 		return
 	}
-	if event.Type == "" || event.RoomID == "" || event.PlayerName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "type, room_id, player_name required"})
+	if event.Type == "" || event.PlayerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "type and player_name required"})
 		return
+	}
+	if event.Type != "heartbeat" && event.RoomID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "room_id required for non-heartbeat events"})
+		return
+	}
+	if event.Type == "heartbeat" && event.RoomID == "" {
+		event.RoomID = "_training"
 	}
 	if err := UpsertPlayerStateDB(event); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})

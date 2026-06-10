@@ -78,7 +78,8 @@ Register a new participant at the registration station.
   "weight": 30.2,
   "heart_rate": 85,
   "spo2": 98.5,
-  "grip_strength": 12.3
+  "grip_strength": 12.3,
+  "dexterity": 20.0
 }
 ```
 
@@ -90,11 +91,12 @@ Register a new participant at the registration station.
 | `age` | required, >= 3 |
 | `grade` | required, free text (e.g. "TK-A", "5", "SMP-2", "SMA-1", "Mahasiswa", "Umum") |
 | `gender` | required, one of: `male`, `female` |
-| `height` | required, > 0 |
-| `weight` | required, > 0 |
+| `height` | optional, > 0, <= 300 (auto-filled by hardware later if empty) |
+| `weight` | optional, > 0, <= 500 (auto-filled by hardware later if empty) |
 | `heart_rate` | optional, 40-220 |
 | `spo2` | optional, 0-100 |
 | `grip_strength` | optional, >= 0 |
+| `dexterity` | optional, >= 0 |
 
 **Response `201`:**
 ```json
@@ -113,6 +115,7 @@ Register a new participant at the registration station.
     "heart_rate": 85,
     "spo2": 98.5,
     "grip_strength": 12.3,
+    "dexterity": 20.0,
     "is_premium": false,
     "created_at": "2026-04-12T10:00:00Z"
   }
@@ -197,6 +200,129 @@ Lookup participant by numeric database ID.
   "message": "Participant not found",
   "data": null
 }
+```
+```
+
+---
+
+### `GET /api/v1/participants/uid/:uid`
+
+Lookup participant by barcode UID. Used by game client after bracelet scan to retrieve identity + body measurements.
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Participant found",
+  "data": {
+    "id": 1,
+    "uid": "BCR-001",
+    "name": "Budi Santoso",
+    "age": 10,
+    "grade": "5",
+    "gender": "male",
+    "height": 170.5,
+    "weight": 65.2,
+    "heart_rate": 85,
+    "spo2": 98.5,
+    "grip_strength": 45.0,
+    "dexterity": 20.0,
+    "is_premium": false,
+    "created_at": "2026-04-12T10:00:00Z"
+  }
+}
+```
+
+**Response `404`:**
+```json
+{
+  "status": "error",
+  "message": "Participant not found",
+  "data": null
+}
+```
+
+---
+
+### `PUT /api/v1/participants/uid/:uid`
+
+Update body measurements for a participant by UID. Designed for **hardware auto-fill** — a measurement station uploads height, weight, grip strength, and dexterity after registration. Only the fields you send are updated (partial update).
+
+**Request (hardware auto-fill — all 4 fields):**
+```json
+{
+  "height": 170.5,
+  "weight": 65.2,
+  "grip_strength": 45.0,
+  "dexterity": 20.0
+}
+```
+
+**Request (partial update — height only):**
+```json
+{
+  "height": 172.0
+}
+```
+
+**Validation rules:**
+| Field | Rules |
+|-------|-------|
+| `height` | > 0, <= 300 |
+| `weight` | > 0, <= 500 |
+| `grip_strength` | >= 0, <= 200 |
+| `dexterity` | >= 0, <= 500 |
+
+**Response `200`:**
+```json
+{
+  "status": "success",
+  "message": "Participant updated",
+  "data": {
+    "id": 1,
+    "uid": "BCR-001",
+    "name": "Budi Santoso",
+    "age": 10,
+    "grade": "5",
+    "gender": "male",
+    "height": 170.5,
+    "weight": 65.2,
+    "heart_rate": 85,
+    "spo2": 98.5,
+    "grip_strength": 45.0,
+    "dexterity": 20.0,
+    "is_premium": false,
+    "created_at": "2026-04-12T10:00:00Z"
+  }
+}
+```
+
+**Response `404`:**
+```json
+{
+  "status": "error",
+  "message": "Participant not found",
+  "data": null
+}
+```
+
+**Response `400` (no updatable fields):**
+```json
+{
+  "status": "error",
+  "message": "No updatable fields provided",
+  "data": null
+}
+```
+
+**Flow:**
+```
+Registrasi (keyboard)         Hardware auto-fill          Game client
+─────────────────────         ──────────────────          ───────────
+POST /participants      ──►   PUT /uid/:uid         ──►   GET /uid/:uid
+UID, nama, gender,            height, weight,              ▶ semua data
+age, grade                    grip_strength,               siap main &
+                              dexterity                    cetak rapor
 ```
 
 ---
@@ -1221,11 +1347,12 @@ ROOM_ID=AB12               # Room code
 | `age` | int | Age in years (>= 3) |
 | `grade` | string | Education level (e.g. "TK-A", "5", "SMP-2", "SMA-1", "Mahasiswa", "Umum") |
 | `gender` | string | `male` or `female` |
-| `height` | float64 | Height in cm |
-| `weight` | float64 | Weight in kg |
+| `height` | float64 | Height in cm (optional — auto-filled by hardware via PUT) |
+| `weight` | float64 | Weight in kg (optional — auto-filled by hardware via PUT) |
 | `heart_rate` | int | Resting heart rate (bpm) |
 | `spo2` | float64 | Blood oxygen saturation (%) |
-| `grip_strength` | float64 | Grip strength measurement |
+| `grip_strength` | float64 | Grip strength measurement (auto-filled by hardware) |
+| `dexterity` | float64 | Dexterity measurement (auto-filled by hardware) |
 | `is_premium` | bool | Premium access (default: false) |
 | `ai_analysis` | string | Cached AI health analysis (Markdown) |
 | `ai_analysis_updated_at` | timestamp | When analysis was last generated |

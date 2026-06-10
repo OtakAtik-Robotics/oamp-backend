@@ -11,7 +11,8 @@ import (
 )
 
 type CreateBatchPayload struct {
-	Name string `json:"name" binding:"required"`
+	Name      string `json:"name" binding:"required"`
+	UidPrefix string `json:"uid_prefix"`
 }
 
 type RenameBatchPayload struct {
@@ -43,8 +44,9 @@ func CreateBatch(c *gin.Context) {
 	}
 
 	newBatch := model.EventBatch{
-		Name:     payload.Name,
-		IsActive: true,
+		Name:      payload.Name,
+		IsActive:  true,
+		UidPrefix: payload.UidPrefix,
 	}
 	if err := tx.Create(&newBatch).Error; err != nil {
 		tx.Rollback()
@@ -123,4 +125,13 @@ func ActivateBatch(c *gin.Context) {
 
 	tx.Commit()
 	response.OKWithMessage(c, fmt.Sprintf("Batch %s is now active", batch.Name), nil)
+}
+
+func GetActiveBatch(c *gin.Context) {
+	var batch model.EventBatch
+	if err := config.DB.Where("is_active = ?", true).First(&batch).Error; err != nil {
+		response.Error(c, http.StatusNotFound, "No active batch")
+		return
+	}
+	response.OKWithMessage(c, "Active batch", batch)
 }

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"oamp-backend/internal/config"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func RegisterParticipant(c *gin.Context) {
@@ -17,6 +19,22 @@ func RegisterParticipant(c *gin.Context) {
 	if err := c.ShouldBindJSON(&participant); err != nil {
 		response.Error(c, http.StatusBadRequest, response.FormatBindError(err))
 		return
+	}
+
+	if participant.UID == "" {
+		var activeBatch model.EventBatch
+		if err := config.DB.Where("is_active = ?", true).First(&activeBatch).Error; err != nil {
+			response.Error(c, http.StatusBadRequest, "No active session and no UID provided")
+			return
+		}
+		if activeBatch.UidPrefix == "" {
+			response.Error(c, http.StatusBadRequest, "UID is required (no auto-generation prefix configured)")
+			return
+		}
+		config.DB.Model(&model.EventBatch{}).Where("id = ?", activeBatch.ID).
+			UpdateColumn("uid_counter", gorm.Expr("uid_counter + 1"))
+		config.DB.First(&activeBatch, activeBatch.ID)
+		participant.UID = fmt.Sprintf("%s%03d", activeBatch.UidPrefix, activeBatch.UidCounter)
 	}
 
 	log.Printf("[participant] registering UID=%s Name=%s", participant.UID, participant.Name)
@@ -108,6 +126,7 @@ type ParticipantWithScores struct {
 	HeartRate       int        `json:"heart_rate"`
 	SpO2            float64    `json:"spo2"`
 	GripStrength    float64    `json:"grip_strength"`
+	Dexterity       float64    `json:"dexterity"`
 	IsPremium       bool       `json:"is_premium"`
 	AiAnalysis      string     `json:"ai_analysis"`
 	AiAnalysisUpdatedAt *time.Time `json:"ai_analysis_updated_at"`
@@ -125,7 +144,7 @@ func GetParticipantsWithScores(c *gin.Context) {
 	query := `
 		SELECT
 			p.id, p.uid, p.name, p.age, p.grade, p.gender,
-			p.height, p.weight, p.heart_rate, p.spo2, p.grip_strength,
+			p.height, p.weight, p.heart_rate, p.spo2, p.grip_strength, p.dexterity,
 			p.is_premium, p.ai_analysis, p.ai_analysis_updated_at, p.created_at,
 			COALESCE(best.level_reached, 0) AS level_reached,
 			COALESCE(best.total_time, 0) AS total_time,
@@ -198,6 +217,59 @@ func DeleteParticipant(c *gin.Context) {
 	}
 
 	response.OKWithMessage(c, "Participant deleted", nil)
+}
+
+// UpdateParticipantPayload — body for PUT /api/v1/participants/uid/:uid
+// Pointer fields so we only update what the client sends, not zero-value confusion.
+type UpdateParticipantPayload struct {
+	Height       *float64 `json:"height" binding:"omitempty,gt=0,lte=300"`
+	Weight       *float64 `json:"weight" binding:"omitempty,gt=0,lte=500"`
+	GripStrength *float64 `json:"grip_strength" binding:"omitempty,gte=0,lte=200"`
+	Dexterity    *float64 `json:"dexterity" binding:"omitempty,gte=0,lte=500"`
+}
+
+// UpdateParticipant — PUT /api/v1/participants/uid/:uid
+// Updates measurement fields (height, weight, grip_strength, dexterity) for a participant by UID.
+// Designed for hardware auto-fill: after keyboard registration, a measurement station
+// uploads body metrics.
+func UpdateParticipant(c *gin.Context) {
+	uid := c.Param("uid")
+
+	var payload UpdateParticipantPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		response.Error(c, http.StatusBadRequest, response.FormatBindError(err))
+		return
+	}
+
+	updates := make(map[string]interface{})
+	if payload.Height != nil {
+		updates["height"] = *payload.Height
+	}
+	if payload.Weight != nil {
+		updates["weight"] = *payload.Weight
+	}
+	if payload.GripStrength != nil {
+		updates["grip_strength"] = *payload.GripStrength
+	}
+	if payload.Dexterity != nil {
+		updates["dexterity"] = *payload.Dexterity
+	}
+
+	if len(updates) == 0 {
+		response.Error(c, http.StatusBadRequest, "No updatable fields provided")
+		return
+	}
+
+	result := config.DB.Model(&model.Participant{}).Where("uid = ?", uid).Updates(updates)
+	if result.RowsAffected == 0 {
+		response.Error(c, http.StatusNotFound, "Participant not found")
+		return
+	}
+
+	// Return updated participant
+	var participant model.Participant
+	config.DB.Where("uid = ?", uid).First(&participant)
+	response.OKWithMessage(c, "Participant updated", participant)
 }
 
 

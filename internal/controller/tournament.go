@@ -7,7 +7,9 @@ import (
 	"oamp-backend/internal/config"
 	"oamp-backend/internal/model"
 	"oamp-backend/pkg/response"
+
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // ---------- Public structs ----------
@@ -130,7 +132,7 @@ func JoinTournament(c *gin.Context) {
 		return
 	}
 
-	config.DB.Model(&tournament).Update("player_count", tournament.PlayerCount+1)
+	config.DB.Model(&tournament).UpdateColumn("player_count", gorm.Expr("player_count + 1"))
 	response.OKWithMessage(c, "Joined successfully", tp)
 }
 
@@ -274,15 +276,24 @@ func StartTournament(c *gin.Context) {
 		}
 	}
 
-	// Auto-assign unique room codes to each Round 1 scheduled match
-	var round1Matches []model.TournamentMatch
-	config.DB.Where("tournament_id = ? AND round = ? AND status = ?", tournament.ID, 1, "scheduled").Find(&round1Matches)
-	for i := range round1Matches {
-		round1Matches[i].RoomID = generateRoomCode()
-		config.DB.Save(&round1Matches[i])
+	// Auto-assign unique room codes to ALL scheduled matches (all rounds)
+	var scheduledMatches []model.TournamentMatch
+	config.DB.Where("tournament_id = ? AND status = ?", tournament.ID, "scheduled").Find(&scheduledMatches)
+	for i := range scheduledMatches {
+		scheduledMatches[i].RoomID = generateRoomCode()
+		config.DB.Save(&scheduledMatches[i])
 	}
 
-	// Find first non-bye match as current
+	// Promote bye winners to their parent matches
+	var byeMatches []model.TournamentMatch
+	config.DB.Where("tournament_id = ? AND status = ?", tournament.ID, "bye").Find(&byeMatches)
+	for i := range byeMatches {
+		if byeMatches[i].WinnerID != nil {
+			advanceWinner(tournament.ID, &byeMatches[i], *byeMatches[i].WinnerID)
+		}
+	}
+
+	// Find first non-bye scheduled match as current
 	var firstMatch model.TournamentMatch
 	config.DB.Where("tournament_id = ? AND status = ?", tournament.ID, "scheduled").Order("round asc, match_number asc").First(&firstMatch)
 	if firstMatch.ID != 0 {
@@ -393,7 +404,11 @@ func advanceWinner(tournamentID uint, match *model.TournamentMatch, winnerID uin
 	var nextMatch model.TournamentMatch
 	config.DB.Where("tournament_id = ? AND status = ?", tournamentID, "scheduled").Order("round asc, match_number asc").First(&nextMatch)
 	if nextMatch.ID != 0 {
-		config.DB.Model(&nextMatch).Update("status", "ready")
+		updates := map[string]interface{}{"status": "ready"}
+		if nextMatch.RoomID == "" {
+			updates["room_id"] = generateRoomCode()
+		}
+		config.DB.Model(&nextMatch).Updates(updates)
 		config.DB.Model(&tournament).Update("current_match_id", nextMatch.ID)
 		config.DB.Model(&tournament).Update("current_round", nextMatch.Round)
 	} else {
@@ -487,7 +502,7 @@ func RegisterTournamentPlayers(c *gin.Context) {
 		added++
 	}
 
-	config.DB.Model(&tournament).Update("player_count", tournament.PlayerCount+added)
+	config.DB.Model(&tournament).UpdateColumn("player_count", gorm.Expr("player_count + ?", added))
 	response.OKWithMessage(c, fmt.Sprintf("Registered %d players", added), gin.H{
 		"added":  added,
 		"errors": errors,
