@@ -48,12 +48,15 @@ func TestSaveGameSession_Computation(t *testing.T) {
 	if session.VisuoSpatialFit != 0.75 {
 		t.Errorf("expected visuo_spatial_fit 0.75, got %f", session.VisuoSpatialFit)
 	}
-	// dexterity = cognitive_age / real_age = 8/10 = 0.8
-	if session.DexterityScore != 0.8 {
-		t.Errorf("expected dexterity_score 0.8, got %f", session.DexterityScore)
+	if session.DexterityScore != 0.0 {
+		t.Errorf("expected dexterity_score 0.0, got %f", session.DexterityScore)
 	}
-	// score = (4*10) + (0.75*50) + (0.8*0.2) = 40 + 37.5 + 0.16 = 77.66
-	expectedScore := float64(4)*10 + 0.75*50 + 0.8*0.2
+	if session.CognitiveAge != 8 {
+		t.Errorf("expected cognitive_age 8, got %d", session.CognitiveAge)
+	}
+	// totalTime = 5+6+7+8 = 26, levelReached=4
+	// score = 4*1000 - 26*10 = 4000 - 260 = 3740
+	expectedScore := 3740.0
 	if session.Score != expectedScore {
 		t.Errorf("expected score %f, got %f", expectedScore, session.Score)
 	}
@@ -62,7 +65,48 @@ func TestSaveGameSession_Computation(t *testing.T) {
 	}
 }
 
-func TestSaveGameSession_DexterityCap(t *testing.T) {
+func TestSaveGameSession_HighScore(t *testing.T) {
+	setupTestDB(t)
+	defer cleanupTestDB()
+
+	p := seedParticipant(t, "UID003", "Charlie", 12)
+	result := model.GameResult{
+		UID:          "UID003",
+		Mode:         "competition",
+		Age:          12,
+		Task01:       8.0,
+		Task02:       7.0,
+		Task03:       6.0,
+		Task04:       5.0,
+		Task05:       4.0,
+		Task06:       3.0,
+		Task07:       2.0,
+		Task08:       1.0,
+		TaskAvg:      4.5,
+		CognitiveAge: 10.0,
+		VisuoSpatial: 100.0,
+	}
+
+	err := saveGameSession(&result, p.ID)
+	if err != nil {
+		t.Fatalf("saveGameSession failed: %v", err)
+	}
+
+	var session model.GameSession
+	config.DB.Where("participant_id = ?", p.ID).First(&session)
+
+	if session.LevelReached != 8 {
+		t.Errorf("expected level_reached 8, got %d", session.LevelReached)
+	}
+	// totalTime = 8+7+6+5+4+3+2+1 = 36, levelReached=8
+	// score = 8*1000 - 36*10 = 8000 - 360 = 7640
+	expectedScore := 7640.0
+	if session.Score != expectedScore {
+		t.Errorf("expected score %f, got %f", expectedScore, session.Score)
+	}
+}
+
+func TestSaveGameSession_DexterityRemoved(t *testing.T) {
 	setupTestDB(t)
 	defer cleanupTestDB()
 
@@ -71,8 +115,10 @@ func TestSaveGameSession_DexterityCap(t *testing.T) {
 		UID:          "UID002",
 		Mode:         "competition",
 		Age:          5,
-		CognitiveAge: 15.0, // 15/5 = 3.0 → capped at 2.0
+		CognitiveAge: 9.0,
 		VisuoSpatial: 100.0,
+		Task01:       10.0,
+		Task02:       0,
 		TaskAvg:      10.0,
 	}
 
@@ -84,8 +130,15 @@ func TestSaveGameSession_DexterityCap(t *testing.T) {
 	var session model.GameSession
 	config.DB.Where("participant_id = ?", p.ID).First(&session)
 
-	if session.DexterityScore != 2.0 {
-		t.Errorf("expected dexterity_score capped at 2.0, got %f", session.DexterityScore)
+	if session.DexterityScore != 0.0 {
+		t.Errorf("expected dexterity_score 0.0, got %f", session.DexterityScore)
+	}
+	if session.CognitiveAge != 9 {
+		t.Errorf("expected cognitive_age 9, got %d", session.CognitiveAge)
+	}
+	// levelReached=1, totalTime=10, score = 1*1000 - 10*10 = 900
+	if session.Score != 900.0 {
+		t.Errorf("expected score 900, got %f", session.Score)
 	}
 	if session.Mode != "competition" {
 		t.Errorf("expected mode competition, got %s", session.Mode)
@@ -109,7 +162,7 @@ func TestSubmitGameResultHTTP(t *testing.T) {
 		"task01":        5.0,
 		"task_avg":      5.0,
 		"cognitive_age": 8.0,
-		"visuo_spatial": 60.0,
+		"visuo_spatial": 75.0,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/game/submit", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -151,7 +204,7 @@ func TestSubmitGameResultHTTP_DefaultMode(t *testing.T) {
 		"task01":        5.0,
 		"task_avg":      5.0,
 		"cognitive_age": 8.0,
-		"visuo_spatial": 60.0,
+		"visuo_spatial": 75.0,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/game/submit", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

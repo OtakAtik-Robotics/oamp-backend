@@ -70,9 +70,9 @@ ATURAN OUTPUT (WAJIB DIIKUTI):
 5. Beri jarak antar section dengan newline
 6. Jangan gunakan emoji berlebihan
 7. Highlight nilai penting dengan **bold**
-8. Selalu tambahkan disclaimer медиум di akhir
+8. Selalu tambahkan disclaimer medis di akhir
 
-FORMAT WAJUR:
+FORMAT WAJIB:
 ## Judul Analisis
 
 ### Ringkasan Data

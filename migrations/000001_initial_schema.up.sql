@@ -17,7 +17,6 @@ CREATE TABLE IF NOT EXISTS participants (
     height DOUBLE PRECISION NOT NULL,
     weight DOUBLE PRECISION NOT NULL,
     heart_rate INTEGER,
-    spo2 DOUBLE PRECISION,
     grip_strength DOUBLE PRECISION,
     is_premium BOOLEAN DEFAULT FALSE,
     ai_analysis TEXT,
@@ -130,6 +129,8 @@ CREATE TABLE IF NOT EXISTS tournament_matches (
     player2_name VARCHAR(100),
     player1_score DOUBLE PRECISION DEFAULT 0,
     player2_score DOUBLE PRECISION DEFAULT 0,
+    player1_submitted BOOLEAN DEFAULT FALSE,
+    player2_submitted BOOLEAN DEFAULT FALSE,
     winner_id INTEGER,
     status VARCHAR(20) DEFAULT 'scheduled',
     parent_match_id INTEGER,
@@ -147,3 +148,8 @@ INSERT INTO event_batches (name, is_active) VALUES ('Sesi Default', TRUE) ON CON
 
 -- Add dexterity column to participants
 ALTER TABLE participants ADD COLUMN IF NOT EXISTS dexterity DOUBLE PRECISION DEFAULT 0;
+
+-- Add per-task cognitive age, level variants, and client timestamp to game_results
+ALTER TABLE game_results ADD COLUMN IF NOT EXISTS cog_age_list JSONB DEFAULT '[]';
+ALTER TABLE game_results ADD COLUMN IF NOT EXISTS variant_list JSONB DEFAULT '[]';
+ALTER TABLE game_results ADD COLUMN IF NOT EXISTS client_ts BIGINT DEFAULT 0;

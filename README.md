@@ -6,7 +6,7 @@ REST API + WebSocket server for the OAMP cognitive assessment platform. Handles 
 
 | Layer | Technology |
 |-------|------------|
-| Language | Go 1.26+ |
+| Language | Go 1.25+ |
 | Framework | Gin (HTTP router) |
 | ORM | GORM (PostgreSQL) |
 | Database | PostgreSQL |
@@ -16,7 +16,7 @@ REST API + WebSocket server for the OAMP cognitive assessment platform. Handles 
 | Security | golang.org/x/time (rate limiting), go-playground/validator |
 | Payment | Midtrans Snap |
 | Notifications | Telegram Bot API |
-| Real-time | gorilla/websocket (1v1 match spectator) |
+| Real-time | gorilla/websocket (1v1 match spectator + EventDisplay) |
 
 ## Project Structure
 
@@ -58,7 +58,7 @@ migrations/                     # golang-migrate SQL migrations
 
 ### Prerequisites
 
-- Go 1.26+
+- Go 1.25+
 - PostgreSQL (running and accessible)
 
 ### Setup
@@ -155,6 +155,7 @@ AI_BASE_URL=https://api.deepseek.com
 | GET | `/api/v1/participants/id/:id` | Get participant by DB ID |
 | GET | `/api/v1/participants/uid/:uid` | Get participant by UID |
 | GET | `/api/v1/participants/uid/:uid/sessions` | Get participant sessions by UID |
+| GET | `/api/v1/participants/uid/:uid/results` | Get game_result by UID (for analytics per-user, returns task01-08, cognitive_age, variant_list) |
 | GET | `/api/v1/participants/lookup/:nickname` | Lookup participant by nickname |
 | DELETE | `/api/v1/participants/:id` | Delete participant (cascade) |
 
@@ -170,7 +171,7 @@ AI_BASE_URL=https://api.deepseek.com
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/v1/game/submit` | Submit game result (validation: task times 0-600s, visuo_spatial 0-100, cognitive_age 0-120) |
+| POST | `/api/v1/game/submit` | Submit game result (validation: task times 0-600s, visuo_spatial 0-100) |
 | POST | `/api/v1/game/event` | Desktop game event (join_room, level_start, heartbeat, etc.) |
 
 ### Rooms & Match
@@ -193,6 +194,8 @@ AI_BASE_URL=https://api.deepseek.com
 |--------|------|-------------|
 | GET | `/api/v1/leaderboard` | CTF-style top 10 leaderboard (`?mode=training\|competition&batch_id=N`) |
 | GET | `/api/v1/leaderboard/timeline` | Timeline data (max 200 entries) |
+| GET | `/api/v1/stats` | Aggregate stats (total participants, avg time, gender distribution, per-level averages, timeline) |
+| GET | `/api/v1/stations` | Active station health (player name, room, mode, status) |
 
 ### Event Batches
 
@@ -225,9 +228,11 @@ AI_BASE_URL=https://api.deepseek.com
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/participants/analysis/:uid` | AI health analysis (premium-gated, cached) |
-| GET | `/api/v1/export/excel` | Download .xlsx report |
+| GET | `/api/v1/export/excel` | Download .xlsx report (4 sheets: Leaderboard, Participants, Sessions, GameResults) |
 | GET | `/api/v1/export/pdf` | Download .pdf leaderboard |
-| GET | `/api/v1/export/rapor/:uid` | Download per-participant .pdf rapor |
+| GET | `/api/v1/export/rapor/:uid` | Download per-participant .pdf rapor (Merah Putih branded) |
+| GET | `/api/v1/export/csv` | Download full data CSV export |
+| POST | `/api/v1/export/telegram` | Send Excel report to configured Telegram chat |
 
 ### Compat Routes (no v1 prefix, for desktop client)
 
@@ -235,7 +240,7 @@ AI_BASE_URL=https://api.deepseek.com
 |--------|------|-------------|
 | GET | `/api/participants/uid/:uid` | Get participant by UID |
 | POST | `/api/game/submit` | Submit game result |
-| POST | `/api/game/event` | Game event |
+| POST | `/api/game/event` | Game event (join_room, leave_room, level_start, heartbeat) |
 | GET | `/api/rooms` | List rooms |
 | POST | `/api/rooms` | Create room |
 | GET | `/api/rooms/:code` | Get room |
@@ -291,7 +296,7 @@ AI_BASE_URL=https://api.deepseek.com
 │  CTF top 10                 AI Health Report (LLM, premium-gated)     │
 │                                                                       │
 │  GET /api/v1/export/excel   GET /api/v1/export/rapor/:uid             │
-│  3-sheet workbook           Per-participant PDF rapor                 │
+│  4-sheet workbook           Per-participant PDF rapor (Merah Putih branded)  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -323,16 +328,16 @@ Desktop Client (P1)                     Server                              Desk
 ## Leaderboard Score Formula
 
 ```
-score = (level_reached × 10) + (visuo_spatial_fit × 50) + (dexterity_score × 0.2)
+score = (level_reached × 1000) - (total_time × 10)
 ```
 
 | Metric | Weight | Range |
 |--------|--------|-------|
-| `level_reached` (1-8) | ×10 | 10-80 |
-| `visuo_spatial_fit` (0-1) | ×50 | 0-50 |
-| `dexterity_score` (0-2, capped) | ×0.2 | 0-20 |
+| `level_reached` (1-8) | ×1000 | 1000-8000 |
+| `total_time` (seconds) | ×10 | penalty |
+| Score capped at minimum | 0 | 0+ |
 
-**Total range: 10-150**
+**Score range: 1000-8000** (level_reached × 1000, minus time penalty). Score capped at minimum 0.
 
 Server computes this identically in `saveGameSession` and the leaderboard SQL query.
 
@@ -342,7 +347,7 @@ Server computes this identically in `saveGameSession` and the leaderboard SQL qu
 
 - **Rate limiting:** Per-IP, 10 requests/sec with burst of 30
 - **Body size limit:** 2MB max request body
-- **Input validation:** All endpoints validated via Gin binding tags + go-playground/validator. Game results: task times 0-600s, visuo_spatial 0-100, cognitive_age 0-120
+- **Input validation:** All endpoints validated via Gin binding tags + go-playground/validator. Game results: task times 0-600s, visuo_spatial 0-100
 - **Clean error messages:** Validation errors formatted without leaking internal struct details
 - **Filename sanitization:** Export filenames stripped of special characters
 - **Graceful degradation:** AI analysis returns HTTP 200 with fallback message on failure (never 500)
@@ -350,11 +355,24 @@ Server computes this identically in `saveGameSession` and the leaderboard SQL qu
 - **Database transactions:** Game session submission uses `tx.Begin()` with rollback
 - **Webhook signature validation:** Midtrans notifications verified via SHA512
 - **Payment gate:** Game submission and AI analysis require `is_premium = true`
+- **WebSocket EventDisplay:** `/ws/event-display` for spectator displays (relays score_update, level_start with completed_levels + is_finished fields)
 - **Dual submission:** Room and tournament results require both players to submit before determining winner
 - **Server-side score computation:** Duel results use server-computed scores from GameSession, not client-provided values
 - **Identity verification:** `SubmitDuelResultDB` verifies player UID matches registered participant + room player name
 - **Midtrans logs suppressed:** ServerKey not leaked in debug output
 
+---
+## Docker Deployment
+
+```bash
+# From repo root
+cp .env.example .env      # edit credentials as needed
+docker compose up -d       # backend + PostgreSQL + frontend (nginx)
+```
+
+Backend Dockerfile uses `golang:1.24-alpine` (multi-stage, 15MB final image). Frontend serves via nginx with API/WS proxy. Set `CORS_ORIGINS` explicitly in production.
+
+---
 ## Related Repositories
 
 - **`oamp-frontend/`** — React admin dashboard (this monorepo)

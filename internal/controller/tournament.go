@@ -37,18 +37,6 @@ func nextPowerOf2(n int) int {
 	return int(math.Pow(2, math.Ceil(math.Log2(float64(n)))))
 }
 
-func roundName(round, totalRounds int) string {
-	diff := totalRounds - round
-	switch diff {
-	case 0: return "Final"
-	case 1: return "Semifinal"
-	case 2: return "Quarterfinal"
-	case 3: return "Round of 16"
-	case 4: return "Round of 32"
-	default: return fmt.Sprintf("Round %d", round)
-	}
-}
-
 // ---------- Controllers ----------
 
 // GetTournaments — GET /api/v1/tournaments
@@ -175,7 +163,6 @@ func StartTournament(c *gin.Context) {
 
 	// Create matches round by round (Round 1 first, then 2, ...)
 	var matches []model.TournamentMatch
-	matchIDOffset := make(map[int]uint) // global match ID → sequential
 
 	var currentID uint = 0
 	for r := 0; r < totalRounds; r++ {
@@ -223,6 +210,10 @@ func StartTournament(c *gin.Context) {
 					})
 					continue
 				}
+				// Skip empty slots (bracket size > players)
+				if p1ID == nil && p2ID == nil {
+					continue
+				}
 			}
 
 			matches = append(matches, model.TournamentMatch{
@@ -235,7 +226,6 @@ func StartTournament(c *gin.Context) {
 				Player2Name:  p2Name,
 				Status:       status,
 			})
-			matchIDOffset[int(currentID)] = uint(len(matches)) // will be filled after create
 			currentID++
 		}
 	}
@@ -284,12 +274,12 @@ func StartTournament(c *gin.Context) {
 		config.DB.Save(&scheduledMatches[i])
 	}
 
-	// Promote bye winners to their parent matches
+	// Promote bye winners to their parent matches (without advancing tournament state)
 	var byeMatches []model.TournamentMatch
 	config.DB.Where("tournament_id = ? AND status = ?", tournament.ID, "bye").Find(&byeMatches)
 	for i := range byeMatches {
 		if byeMatches[i].WinnerID != nil {
-			advanceWinner(tournament.ID, &byeMatches[i], *byeMatches[i].WinnerID)
+			promoteWinner(tournament.ID, &byeMatches[i], *byeMatches[i].WinnerID)
 		}
 	}
 
@@ -349,6 +339,10 @@ func SubmitMatchResult(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "Match does not belong to tournament")
 		return
 	}
+	if tournament.Status != "in_progress" {
+		response.Error(c, http.StatusConflict, "Tournament is not in progress")
+		return
+	}
 	if match.Status == "finished" || match.Status == "bye" {
 		response.Error(c, http.StatusConflict, "Match already decided")
 		return
@@ -370,10 +364,28 @@ func SubmitMatchResult(c *gin.Context) {
 
 	advanceWinner(tournament.ID, &match, req.WinnerID)
 
+	// Reload to return fresh data
+	config.DB.First(&match, mid)
 	response.OKWithMessage(c, "Result submitted", match)
 }
 
 // advanceWinner promotes the winner to the parent match and triggers next match readiness
+func promoteWinner(tournamentID uint, match *model.TournamentMatch, winnerID uint) {
+	// Only promote to parent match — do NOT advance tournament state
+	if match.ParentMatchID == nil {
+		return
+	}
+	var parent model.TournamentMatch
+	if err := config.DB.First(&parent, *match.ParentMatchID).Error; err != nil {
+		return
+	}
+	slotKey := fmt.Sprintf("player%d_id", match.ParentSlot)
+	config.DB.Model(&parent).Updates(map[string]interface{}{
+		slotKey:       winnerID,
+		"status":      "scheduled",
+	})
+}
+
 func advanceWinner(tournamentID uint, match *model.TournamentMatch, winnerID uint) {
 	// Advance winner to parent match
 	if match.ParentMatchID != nil && match.ParentSlot > 0 {
@@ -660,15 +672,15 @@ func HandleTournamentEvent(c *gin.Context) {
 		p1Score := match.Player1Score
 		p2Score := match.Player2Score
 
-		// Both scores present — determine winner
+		// Both scores present — determine winner (lower = faster, like duel)
 		var winnerID uint
-		if p1Score > p2Score {
+		if p1Score < p2Score {
 			if match.Player1ID == nil {
 				response.Error(c, http.StatusBadRequest, "Player 1 not assigned")
 				return
 			}
 			winnerID = *match.Player1ID
-		} else if p2Score > p1Score {
+		} else if p2Score < p1Score {
 			if match.Player2ID == nil {
 				response.Error(c, http.StatusBadRequest, "Player 2 not assigned")
 				return

@@ -124,7 +124,6 @@ type ParticipantWithScores struct {
 	Height          float64    `json:"height"`
 	Weight          float64    `json:"weight"`
 	HeartRate       int        `json:"heart_rate"`
-	SpO2            float64    `json:"spo2"`
 	GripStrength    float64    `json:"grip_strength"`
 	Dexterity       float64    `json:"dexterity"`
 	IsPremium       bool       `json:"is_premium"`
@@ -144,7 +143,7 @@ func GetParticipantsWithScores(c *gin.Context) {
 	query := `
 		SELECT
 			p.id, p.uid, p.name, p.age, p.grade, p.gender,
-			p.height, p.weight, p.heart_rate, p.spo2, p.grip_strength, p.dexterity,
+			p.height, p.weight, p.heart_rate, p.grip_strength, p.dexterity,
 			p.is_premium, p.ai_analysis, p.ai_analysis_updated_at, p.created_at,
 			COALESCE(best.level_reached, 0) AS level_reached,
 			COALESCE(best.total_time, 0) AS total_time,
@@ -270,6 +269,17 @@ func UpdateParticipant(c *gin.Context) {
 	var participant model.Participant
 	config.DB.Where("uid = ?", uid).First(&participant)
 	response.OKWithMessage(c, "Participant updated", participant)
+}
+
+// GetParticipantResult — GET /api/v1/participants/uid/:uid/results
+func GetParticipantResult(c *gin.Context) {
+	uid := c.Param("uid")
+	var result model.GameResult
+	if err := config.DB.Where("uid = ?", uid).First(&result).Error; err != nil {
+		response.Error(c, http.StatusNotFound, "No results found for this UID")
+		return
+	}
+	response.OKWithMessage(c, "Game result found", result)
 }
 
 

@@ -66,15 +66,16 @@ func ConnectDB() {
 
 	// Raw SQL migrations for columns AutoMigrate may miss
 	db.Exec(`ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS score DOUBLE PRECISION DEFAULT 0`)
-	db.Exec(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS spo2 DOUBLE PRECISION`)
 	db.Exec(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS player1_uid VARCHAR(50) DEFAULT ''`)
 	db.Exec(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS player2_uid VARCHAR(50) DEFAULT ''`)
 	db.Exec(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS player1_score DOUBLE PRECISION DEFAULT 0`)
 	db.Exec(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS player2_score DOUBLE PRECISION DEFAULT 0`)
 	db.Exec(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS winner VARCHAR(10) DEFAULT ''`)
-	db.Exec(`ALTER TABLE event_batches ADD COLUMN IF NOT EXISTS uid_prefix VARCHAR(20) DEFAULT ''`)
-	db.Exec(`ALTER TABLE event_batches ADD COLUMN IF NOT EXISTS uid_counter INT DEFAULT 0`)
 	db.Exec(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS dexterity DOUBLE PRECISION DEFAULT 0`)
+	db.Exec(`ALTER TABLE tournament_matches ADD COLUMN IF NOT EXISTS player1_submitted BOOLEAN DEFAULT FALSE`)
+	db.Exec(`ALTER TABLE tournament_matches ADD COLUMN IF NOT EXISTS player2_submitted BOOLEAN DEFAULT FALSE`)
+	db.Exec(`ALTER TABLE game_results ADD COLUMN IF NOT EXISTS variant_list JSONB DEFAULT '[]'`)
+	db.Exec(`ALTER TABLE game_results ADD COLUMN IF NOT EXISTS client_ts BIGINT DEFAULT 0`)
 
 	DB = db
 

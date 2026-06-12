@@ -22,7 +22,7 @@ func SetupRoutes(r *gin.Engine) {
 			AllowAllOrigins:  true,
 			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-			AllowCredentials: true,
+			AllowCredentials: false,
 		}
 	} else {
 		originList := strings.Split(origins, ",")
@@ -44,6 +44,7 @@ func SetupRoutes(r *gin.Engine) {
 
 	// WebSocket — outside API group (no body limit, no rate limit)
 	r.GET("/ws/match/:room_id", websocket.HandleWebSocket(wsManager))
+	r.GET("/ws/event-display", websocket.HandleEventDisplay)
 
 	// Set WS manager for use by room controller (broadcast match_start, etc.)
 	controller.SetWSManager(wsManager)
@@ -76,6 +77,7 @@ func SetupRoutes(r *gin.Engine) {
 		api.DELETE("/participants/:id", controller.DeleteParticipant)
 		api.GET("/participants/lookup/:nickname", controller.LookupParticipant)
 		api.GET("/participants/uid/:uid/sessions", controller.GetParticipantSessions)
+		api.GET("/participants/uid/:uid/results", controller.GetParticipantResult)
 		api.PUT("/participants/uid/:uid", controller.UpdateParticipant)
 
 		// Leaderboard
@@ -86,6 +88,8 @@ func SetupRoutes(r *gin.Engine) {
 		api.GET("/export/excel", controller.ExportExcel)
 		api.GET("/export/pdf", controller.ExportPDF)
 		api.GET("/export/rapor/:uid", controller.ExportRapor)
+		api.GET("/export/csv", controller.ExportCSV)
+		api.POST("/export/telegram", controller.SendExportToTelegram)
 
 		// Event Batch management
 		api.GET("/batches", controller.GetBatches)
@@ -105,7 +109,7 @@ func SetupRoutes(r *gin.Engine) {
 		api.GET("/participants/uid/:uid", controller.GetParticipantByUID)
 
 		// 1v1 Match rooms (database-backed)
-		api.GET("/rooms", controller.GetRooms)
+		api.GET("/rooms", controller.GetRoomsV1)
 		api.POST("/rooms", controller.CreateRoom)
 		api.GET("/rooms/:code", controller.GetRoom)
 		api.POST("/rooms/:code/join", controller.JoinRoom)
@@ -119,6 +123,9 @@ func SetupRoutes(r *gin.Engine) {
 
 		// Station health monitoring
 		api.GET("/stations", controller.GetStations)
+
+		// Aggregate statistics
+		api.GET("/stats", controller.GetStats)
 
 		// Participant analysis (AI Health Consultant, premium-gated)
 		api.GET("/participants/analysis/:uid", controller.GetParticipantAnalysis)

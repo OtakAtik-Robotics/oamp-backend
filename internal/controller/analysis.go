@@ -88,7 +88,6 @@ func GetParticipantAnalysis(c *gin.Context) {
 | Umur | %d tahun |
 | Gender | %s |
 | BMI | %.1f |
-| SpO2 | %.0f%% |
 | Heart Rate | %d bpm |
 | Grip Strength | %.1f kg |
 
@@ -98,7 +97,7 @@ func GetParticipantAnalysis(c *gin.Context) {
 | Visuo-Spatial | %.2f |
 | Dexterity | %.2f |
 
-Ikuti format output yang sudah ditentukan di system prompt. Maksimal 150 kata.`, participant.Age, participant.Gender, bmi, participant.SpO2, participant.HeartRate, participant.GripStrength, len(sessions), avgVisuo, avgDex)
+Ikuti format output yang sudah ditentukan di system prompt. Maksimal 150 kata.`, participant.Age, participant.Gender, bmi, participant.HeartRate, participant.GripStrength, len(sessions), avgVisuo, avgDex)
 
 	// Call LLM provider
 	analysis, err := callLLMProvider(prompt)

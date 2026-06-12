@@ -28,6 +28,28 @@ func (a Float64Array) Value() (driver.Value, error) {
 	return json.Marshal(a)
 }
 
+// StringArray implements sql.Scanner and driver.Valuer for JSONB string arrays
+type StringArray []string
+
+func (a *StringArray) Scan(value interface{}) error {
+	if value == nil {
+		*a = nil
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	return json.Unmarshal(b, a)
+}
+
+func (a StringArray) Value() (driver.Value, error) {
+	if a == nil {
+		return "[]", nil
+	}
+	return json.Marshal(a)
+}
+
 type Participant struct {
 	ID                uint      `json:"id" gorm:"primaryKey"`
 	UID               string    `json:"uid" binding:"omitempty" gorm:"uniqueIndex;not null"`
@@ -38,7 +60,6 @@ type Participant struct {
 	Height            float64   `json:"height" binding:"omitempty,gt=0,lte=300"`
 	Weight            float64   `json:"weight" binding:"omitempty,gt=0,lte=500"`
 	HeartRate         int       `json:"heart_rate" binding:"omitempty,gte=40,lte=220"`
-	SpO2              float64   `json:"spo2" binding:"omitempty,gte=0,lte=100"`
 	GripStrength      float64   `json:"grip_strength" binding:"omitempty,gte=0,lte=200"`
 	Dexterity         float64   `json:"dexterity" binding:"omitempty,gte=0,lte=500"`
 	IsPremium         bool      `json:"is_premium" gorm:"default:false"`
@@ -129,9 +150,12 @@ type GameResult struct {
 	Task07       float64   `json:"task07" binding:"gte=0,lte=600"`
 	Task08       float64   `json:"task08" binding:"gte=0,lte=600"`
 	TaskAvg      float64   `json:"task_avg" binding:"gte=0,lte=600"`
-	CognitiveAge float64   `json:"cognitive_age" binding:"gte=0,lte=120"`
+	CognitiveAge float64   `json:"cognitive_age"`
 	VisuoSpatial float64   `json:"visuo_spatial" binding:"gte=0,lte=100"`
-	CreatedAt    time.Time `json:"created_at"`
+	CogAgeList   Float64Array `json:"cog_age_list" gorm:"type:jsonb"`
+	VariantList  StringArray  `json:"variant_list" gorm:"type:jsonb"`
+	ClientTs     int64        `json:"client_ts" gorm:"default:0"`
+	CreatedAt    time.Time    `json:"created_at"`
 }
 
 // Tournament — single elimination cup

@@ -18,6 +18,14 @@ import (
 	"gorm.io/gorm"
 )
 
+func broadcastRoomEvent(eventType, roomID, p1Name, p2Name string) {
+	websocket.DefaultEventDisplayHub.Broadcast(eventType, map[string]interface{}{
+		"room_id":      roomID,
+		"player1_name": p1Name,
+		"player2_name": p2Name,
+	})
+}
+
 var wsManager *websocket.Manager
 
 func SetWSManager(m *websocket.Manager) {
@@ -60,6 +68,7 @@ func cleanupStaleRooms() {
 		if now.Sub(room.LastActivity) > 30*time.Minute {
 			config.DB.Model(&room).Update("status", "finished")
 			log.Printf("[room] room %s marked finished (stale playing)", room.ID)
+			broadcastRoomEvent("room_finished", room.ID, room.Player1Name, room.Player2Name)
 		}
 	}
 }
@@ -89,7 +98,7 @@ func CreateRoomDB(playerName string) (*model.Room, error) {
 func GetActiveRoomsDB() ([]model.Room, error) {
 	cleanupStaleRooms()
 	var rooms []model.Room
-	err := config.DB.Where("status IN ?", []string{"waiting", "ready"}).
+	err := config.DB.Where("status IN ?", []string{"waiting", "ready", "playing", "finished"}).
 		Order("created_at DESC").
 		Find(&rooms).Error
 	return rooms, err
@@ -130,6 +139,8 @@ func JoinRoomDB(code, playerName string) (*model.Room, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Reload to get updated fields
+	config.DB.Where("id = ?", code).First(&room)
 	return &room, nil
 }
 
@@ -157,7 +168,12 @@ func SetReadyDB(code, playerName string) (*model.Room, error) {
 			return err
 		}
 		if room.Player1Ready && room.Player2Ready {
-			return tx.Model(&room).Update("status", "playing").Error
+			if err := tx.Model(&room).Update("status", "playing").Error; err != nil {
+				return err
+			}
+			room.Status = "playing" // update local struct for WS broadcast below
+			broadcastRoomEvent("room_playing", room.ID, room.Player1Name, room.Player2Name)
+			return nil
 		}
 		return nil
 	})
@@ -363,6 +379,16 @@ func GetRooms(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"rooms": rooms})
 }
 
+// GetRoomsV1 — GET /api/v1/rooms (wrapped response per v1 convention)
+func GetRoomsV1(c *gin.Context) {
+	rooms, err := GetActiveRoomsDB()
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to fetch rooms")
+		return
+	}
+	response.OKWithMessage(c, "Rooms fetched", rooms)
+}
+
 // CreateRoom — POST /api/v1/rooms
 func CreateRoom(c *gin.Context) {
 	var req struct {
@@ -564,9 +590,9 @@ func SubmitDuelResultDB(code, playerUID string, playerNum int, score float64) (*
 		}
 
 		var winner string
-		if room.Player1Score > room.Player2Score {
+		if room.Player1Score < room.Player2Score {
 			winner = "1"
-		} else if room.Player2Score > room.Player1Score {
+		} else if room.Player2Score < room.Player1Score {
 			winner = "2"
 		} else {
 			winner = "draw"
@@ -583,7 +609,9 @@ func SubmitDuelResultDB(code, playerUID string, playerNum int, score float64) (*
 		if err := tx.Where("id = ?", code).First(&room).Error; err != nil {
 			return err
 		}
+
 		matchStatus = "decided"
+		broadcastRoomEvent("room_finished", room.ID, room.Player1Name, room.Player2Name)
 		return nil
 	})
 	if err != nil {
@@ -615,21 +643,8 @@ func SubmitDuelResult(c *gin.Context) {
 		return
 	}
 
-	// Compute score server-side from game_sessions if possible
-	computedScore := req.Score // fallback to client score
-	var participant model.Participant
-	if err := config.DB.Where("uid = ?", req.PlayerUID).First(&participant).Error; err == nil {
-		var session model.GameSession
-		batchID := uint(1)
-		config.DB.Model(&model.EventBatch{}).Where("is_active = ?", true).Select("id").Scan(&batchID)
-		if err := config.DB.Where("participant_id = ? AND event_batch_id = ? AND mode = ?", participant.ID, batchID, "competition").Order("created_at DESC").First(&session).Error; err == nil {
-			if session.Score > 0 {
-				computedScore = session.Score
-			}
-		}
-	}
-
-	room, matchStatus, err := SubmitDuelResultDB(code, req.PlayerUID, req.PlayerNum, computedScore)
+	// Use client-provided score directly (pure speed: lower = faster)
+	room, matchStatus, err := SubmitDuelResultDB(code, req.PlayerUID, req.PlayerNum, req.Score)
 	if err != nil {
 		if err.Error() == "room is not in playing state" {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
@@ -706,5 +721,8 @@ func GameEvent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 		return
 	}
+	// Note: level_start and score_update are broadcast directly by game client via WS.
+	// Server does not echo them — avoids duplicate messages.
+
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

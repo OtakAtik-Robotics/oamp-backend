@@ -511,8 +511,8 @@ func TestSubmitDuelResultDB_BothSubmit_Player1Wins(t *testing.T) {
 	SetReadyDB(room.ID, "Alice")
 	SetReadyDB(room.ID, "Bob")
 
-	SubmitDuelResultDB(room.ID, "UID001", 1, 80.0)
-	updated, matchStatus, err := SubmitDuelResultDB(room.ID, "UID002", 2, 60.0)
+	SubmitDuelResultDB(room.ID, "UID001", 1, 60.0)
+	updated, matchStatus, err := SubmitDuelResultDB(room.ID, "UID002", 2, 80.0)
 	if err != nil {
 		t.Fatalf("SubmitDuelResultDB failed: %v", err)
 	}
@@ -539,8 +539,8 @@ func TestSubmitDuelResultDB_BothSubmit_Player2Wins(t *testing.T) {
 	SetReadyDB(room.ID, "Alice")
 	SetReadyDB(room.ID, "Bob")
 
-	SubmitDuelResultDB(room.ID, "UID001", 1, 50.0)
-	updated, matchStatus, err := SubmitDuelResultDB(room.ID, "UID002", 2, 90.0)
+	SubmitDuelResultDB(room.ID, "UID001", 1, 90.0)
+	updated, matchStatus, err := SubmitDuelResultDB(room.ID, "UID002", 2, 50.0)
 	if err != nil {
 		t.Fatalf("SubmitDuelResultDB failed: %v", err)
 	}
@@ -617,8 +617,8 @@ func TestGetDuelResultDB(t *testing.T) {
 	JoinRoomDB(room.ID, "Bob")
 	SetReadyDB(room.ID, "Alice")
 	SetReadyDB(room.ID, "Bob")
-	SubmitDuelResultDB(room.ID, "UID001", 1, 80.0)
-	SubmitDuelResultDB(room.ID, "UID002", 2, 60.0)
+	SubmitDuelResultDB(room.ID, "UID001", 1, 60.0)
+	SubmitDuelResultDB(room.ID, "UID002", 2, 80.0)
 
 	result, err := GetDuelResultDB(room.ID)
 	if err != nil {
@@ -674,8 +674,8 @@ func TestGetDuelResultHTTP(t *testing.T) {
 	JoinRoomDB(room.ID, "Bob")
 	SetReadyDB(room.ID, "Alice")
 	SetReadyDB(room.ID, "Bob")
-	SubmitDuelResultDB(room.ID, "UID001", 1, 80.0)
-	SubmitDuelResultDB(room.ID, "UID002", 2, 60.0)
+	SubmitDuelResultDB(room.ID, "UID001", 1, 60.0)
+	SubmitDuelResultDB(room.ID, "UID002", 2, 80.0)
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

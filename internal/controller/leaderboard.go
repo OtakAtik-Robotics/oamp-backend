@@ -65,7 +65,7 @@ func fetchLeaderboard(limit int, batchID *uint, mode string) []LeaderboardEntry 
                 total_time,
                 level_reached,
                 dexterity_score,
-                ROUND(((level_reached * 10) + (visuo_spatial_fit * 50) + (dexterity_score * 0.2)), 2) AS score
+                ROUND(score, 2) AS score
             FROM game_sessions`
 
 	var args []any
@@ -86,7 +86,7 @@ func fetchLeaderboard(limit int, batchID *uint, mode string) []LeaderboardEntry 
 	}
 
 	query += `
-            ORDER BY participant_id, ((level_reached * 10) + (visuo_spatial_fit * 50) + (dexterity_score * 0.2)) DESC
+            ORDER BY participant_id, score DESC
         ) sub
         JOIN participants p ON p.id = sub.participant_id
         ORDER BY sub.score DESC
@@ -131,7 +131,7 @@ func GetLeaderboardTimeline(c *gin.Context) {
 	query := `
         SELECT
             p.name,
-            ROUND(((gs.level_reached * 10) + (gs.visuo_spatial_fit * 50) + (gs.dexterity_score * 0.2)), 2) AS score,
+            ROUND(gs.score, 2) AS score,
             gs.created_at
         FROM game_sessions gs
         JOIN participants p ON p.id = gs.participant_id`

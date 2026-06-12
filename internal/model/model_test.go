@@ -21,7 +21,6 @@ func TestParticipant_Fields(t *testing.T) {
 		Height:       135.0,
 		Weight:       30.0,
 		HeartRate:    85,
-		SpO2:         98.5,
 		GripStrength: 12.3,
 	}
 
