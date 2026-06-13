@@ -32,35 +32,38 @@ func ExportExcel(c *gin.Context) {
 	sheetLeaderboard := "Leaderboard"
 	f.SetSheetName("Sheet1", sheetLeaderboard)
 
-	lbHeaders := []string{"Rank", "Name", "Grade", "Age", "VisuoSpatialFit", "TotalTime", "LevelReached", "DexterityScore"}
+	lbHeaders := []string{"Rank", "Name", "UID", "Gender", "Grade", "Age", "Score", "TotalTime", "LevelReached", "VisuoSpatialFit", "DexterityScore"}
 	for i, h := range lbHeaders {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheetLeaderboard, cell, h)
 	}
-	f.SetCellStyle(sheetLeaderboard, "A1", "H1", headerStyle)
+	f.SetCellStyle(sheetLeaderboard, "A1", fmt.Sprintf("%c1", 'A'+len(lbHeaders)-1), headerStyle)
 
 	entries := fetchLeaderboard(0, nil, "")
 	for i, e := range entries {
 		row := i + 2
 		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("A%d", row), e.Rank)
 		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("B%d", row), e.Name)
-		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("C%d", row), e.Grade)
-		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("D%d", row), e.Age)
-		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("E%d", row), e.VisuoSpatialFit)
-		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("F%d", row), e.TotalTime)
-		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("G%d", row), e.LevelReached)
-		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("H%d", row), e.DexterityScore)
+		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("C%d", row), e.UID)
+		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("D%d", row), e.Gender)
+		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("E%d", row), e.Grade)
+		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("F%d", row), e.Age)
+		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("G%d", row), e.Score)
+		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("H%d", row), e.TotalTime)
+		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("I%d", row), e.LevelReached)
+		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("J%d", row), e.VisuoSpatialFit)
+		f.SetCellValue(sheetLeaderboard, fmt.Sprintf("K%d", row), e.DexterityScore)
 	}
 
 	sheetParticipants := "Participants"
 	f.NewSheet(sheetParticipants)
 
-	pHeaders := []string{"ID", "UID", "Name", "Age", "Grade", "Gender", "Height", "Weight", "HeartRate", "GripStrength"}
+	pHeaders := []string{"ID", "UID", "Name", "Age", "Grade", "Gender", "Height", "Weight", "HeartRate", "GripStrength", "Dexterity"}
 	for i, h := range pHeaders {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheetParticipants, cell, h)
 	}
-	f.SetCellStyle(sheetParticipants, "A1", "J1", headerStyle)
+	f.SetCellStyle(sheetParticipants, "A1", fmt.Sprintf("%c1", 'A'+len(pHeaders)-1), headerStyle)
 
 	var participants []model.Participant
 	config.DB.Order("id asc").Find(&participants)
@@ -77,17 +80,18 @@ func ExportExcel(c *gin.Context) {
 		f.SetCellValue(sheetParticipants, fmt.Sprintf("H%d", row), p.Weight)
 		f.SetCellValue(sheetParticipants, fmt.Sprintf("I%d", row), p.HeartRate)
 		f.SetCellValue(sheetParticipants, fmt.Sprintf("J%d", row), p.GripStrength)
+		f.SetCellValue(sheetParticipants, fmt.Sprintf("K%d", row), p.Dexterity)
 	}
 
 	sheetSessions := "Sessions"
 	f.NewSheet(sheetSessions)
 
-	sHeaders := []string{"ID", "ParticipantID", "Mode", "LevelReached", "TotalTime", "CognitiveAge", "VisuoSpatialFit", "DexterityScore"}
+	sHeaders := []string{"ID", "ParticipantID", "Mode", "LevelReached", "TotalTime", "Score", "CognitiveAge", "VisuoSpatialFit", "DexterityScore", "CreatedAt"}
 	for i, h := range sHeaders {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue(sheetSessions, cell, h)
 	}
-	f.SetCellStyle(sheetSessions, "A1", "H1", headerStyle)
+	f.SetCellStyle(sheetSessions, "A1", fmt.Sprintf("%c1", 'A'+len(sHeaders)-1), headerStyle)
 
 	var sessions []model.GameSession
 	config.DB.Order("id asc").Find(&sessions)
@@ -99,9 +103,11 @@ func ExportExcel(c *gin.Context) {
 		f.SetCellValue(sheetSessions, fmt.Sprintf("C%d", row), s.Mode)
 		f.SetCellValue(sheetSessions, fmt.Sprintf("D%d", row), s.LevelReached)
 		f.SetCellValue(sheetSessions, fmt.Sprintf("E%d", row), s.TotalTime)
-		f.SetCellValue(sheetSessions, fmt.Sprintf("F%d", row), s.CognitiveAge)
-		f.SetCellValue(sheetSessions, fmt.Sprintf("G%d", row), s.VisuoSpatialFit)
-		f.SetCellValue(sheetSessions, fmt.Sprintf("H%d", row), s.DexterityScore)
+		f.SetCellValue(sheetSessions, fmt.Sprintf("F%d", row), s.Score)
+		f.SetCellValue(sheetSessions, fmt.Sprintf("G%d", row), s.CognitiveAge)
+		f.SetCellValue(sheetSessions, fmt.Sprintf("H%d", row), s.VisuoSpatialFit)
+		f.SetCellValue(sheetSessions, fmt.Sprintf("I%d", row), s.DexterityScore)
+		f.SetCellValue(sheetSessions, fmt.Sprintf("J%d", row), s.CreatedAt.Format(time.RFC3339))
 	}
 
 	// ── Game Results (raw per-level data for analysis) ────────────────────
@@ -276,30 +282,37 @@ func ExportRapor(c *gin.Context) {
 	if result.UID != "" {
 		avgCognitive = int(result.CognitiveAge)
 	}
+	visuoSpatialStr := "—"
+	if result.UID != "" {
+		visuoSpatialStr = fmt.Sprintf("%.0f%%", result.VisuoSpatial)
+	}
 	pdf.SetDrawColor(red[0], red[1], red[2])
-	pdf.RoundedRect(15, pdf.GetY(), 180, 25, 3, "1234", "D")
-	pdf.SetFillColor(254, 242, 242) // light red
-	pdf.Rect(15, pdf.GetY(), 180, 25, "F")
+	pdf.SetFillColor(254, 242, 242)
+	pdf.RoundedRect(15, pdf.GetY(), 180, 25, 3, "1234", "DF")
 
 	kpiLabels := []string{"Skor Terbaik", "Level", "Usia Kognitif", "Visuo-Spatial"}
 	kpiValues := []string{
 		fmt.Sprintf("%.0f pts", bestScore),
 		fmt.Sprintf("%d/8", maxLevel),
 		fmt.Sprintf("%d th", avgCognitive),
-		fmt.Sprintf("%.0f%%", result.VisuoSpatial),
+		visuoSpatialStr,
 	}
-	kpiX := 15.0
+	kpiCellW := 45.0
+	kpiBase := 15.0
+	kpiY := pdf.GetY()
 	for i := 0; i < 4; i++ {
+		x := kpiBase + float64(i)*kpiCellW
 		pdf.SetFillColor(red[0], red[1], red[2])
 		pdf.SetTextColor(255, 255, 255)
 		pdf.SetFont("Helvetica", "B", 9)
-		pdf.SetXY(kpiX, pdf.GetY()+2)
-		pdf.CellFormat(42, 5, kpiLabels[i], "", 0, "C", false, 0, "")
+		pdf.SetX(x)
+		pdf.SetY(kpiY + 2)
+		pdf.CellFormat(kpiCellW, 5, kpiLabels[i], "", 0, "C", false, 0, "")
 		pdf.SetTextColor(30, 30, 30)
 		pdf.SetFont("Helvetica", "B", 11)
-		pdf.SetXY(kpiX, pdf.GetY()+5.5)
-		pdf.CellFormat(42, 6, kpiValues[i], "", 0, "C", false, 0, "")
-		kpiX += 45
+		pdf.SetX(x)
+		pdf.SetY(kpiY + 7.5)
+		pdf.CellFormat(kpiCellW, 6, kpiValues[i], "", 0, "C", false, 0, "")
 	}
 	pdf.Ln(30)
 
@@ -310,10 +323,10 @@ func ExportRapor(c *gin.Context) {
 	pdf.Ln(8)
 	pdf.SetFont("Helvetica", "", 10)
 	bio := [][]string{
-		{"Tinggi Badan", fmt.Sprintf("%.1f cm", participant.Height)},
-		{"Berat Badan", fmt.Sprintf("%.1f kg", participant.Weight)},
-		{"Kekuatan Grip", fmt.Sprintf("%.1f kg", participant.GripStrength)},
-		{"Dexterity", fmt.Sprintf("%.0f", participant.Dexterity)},
+		{"Tinggi Badan", ifPositive(participant.Height, "%.1f cm", "")},
+		{"Berat Badan", ifPositive(participant.Weight, "%.1f kg", "")},
+		{"Kekuatan Grip", ifPositive(participant.GripStrength, "%.1f kg", "")},
+		{"Dexterity", ifPositive(participant.Dexterity, "%.0f", "")},
 	}
 	for _, row := range bio {
 		pdf.SetFont("Helvetica", "B", 10)
@@ -416,6 +429,16 @@ func sanitizeFilename(name string) string {
 	return s
 }
 
+func ifPositive(value float64, format, fallback string) string {
+	if value > 0 {
+		return fmt.Sprintf(format, value)
+	}
+	if fallback != "" {
+		return fallback
+	}
+	return "—"
+}
+
 // ExportCSV — GET /api/v1/export/csv — downloadable ZIP of all data tables as CSV
 func ExportCSV(c *gin.Context) {
 	f := excelize.NewFile()
@@ -504,7 +527,7 @@ func SendExportToTelegram(c *gin.Context) {
 	defer f.Close()
 
 	f.SetSheetName("Sheet1", "GameResults")
-	rHeaders := []string{"UID","Mode","NickName","Gender","Age","Task01","Task02","Task03","Task04","Task05","Task06","Task07","Task08","TaskAvg","CognitiveAge","VisuoSpatial"}
+	rHeaders := []string{"UID","Mode","NickName","Gender","Age","Task01","Task02","Task03","Task04","Task05","Task06","Task07","Task08","TaskAvg","CognitiveAge","VisuoSpatial","CogAgeList","VariantList","ClientTs","CreatedAt"}
 	for i, h := range rHeaders {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		f.SetCellValue("GameResults", cell, h)
@@ -513,6 +536,8 @@ func SendExportToTelegram(c *gin.Context) {
 	config.DB.Order("created_at desc").Find(&results)
 	for i, r := range results {
 		row := i + 2
+		varJSON, _ := json.Marshal(r.VariantList)
+		cogJSON, _ := json.Marshal(r.CogAgeList)
 		f.SetCellValue("GameResults", fmt.Sprintf("A%d", row), r.UID)
 		f.SetCellValue("GameResults", fmt.Sprintf("B%d", row), r.Mode)
 		f.SetCellValue("GameResults", fmt.Sprintf("C%d", row), r.NickName)
@@ -529,6 +554,10 @@ func SendExportToTelegram(c *gin.Context) {
 		f.SetCellValue("GameResults", fmt.Sprintf("N%d", row), r.TaskAvg)
 		f.SetCellValue("GameResults", fmt.Sprintf("O%d", row), r.CognitiveAge)
 		f.SetCellValue("GameResults", fmt.Sprintf("P%d", row), r.VisuoSpatial)
+		f.SetCellValue("GameResults", fmt.Sprintf("Q%d", row), string(cogJSON))
+		f.SetCellValue("GameResults", fmt.Sprintf("R%d", row), string(varJSON))
+		f.SetCellValue("GameResults", fmt.Sprintf("S%d", row), r.ClientTs)
+		f.SetCellValue("GameResults", fmt.Sprintf("T%d", row), r.CreatedAt.Format(time.RFC3339))
 	}
 
 	buf, err := f.WriteToBuffer()

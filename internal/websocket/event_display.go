@@ -13,6 +13,7 @@ import (
 type EventDisplayHub struct {
 	clients map[*websocket.Conn]bool
 	mu      sync.RWMutex
+	writeMu sync.Mutex // serializes writes to prevent concurrent gorilla/websocket writes
 }
 
 var DefaultEventDisplayHub = &EventDisplayHub{
@@ -21,21 +22,35 @@ var DefaultEventDisplayHub = &EventDisplayHub{
 
 func (h *EventDisplayHub) Add(conn *websocket.Conn) {
 	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.clients[conn] = true
-	h.mu.Unlock()
 }
 
 func (h *EventDisplayHub) Remove(conn *websocket.Conn) {
 	h.mu.Lock()
+	defer h.mu.Unlock()
 	delete(h.clients, conn)
-	h.mu.Unlock()
+}
+
+func (h *EventDisplayHub) writeText(conn *websocket.Conn, msg []byte) error {
+	h.writeMu.Lock()
+	defer h.writeMu.Unlock()
+	conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	return conn.WriteMessage(websocket.TextMessage, msg)
+}
+
+func (h *EventDisplayHub) writePing(conn *websocket.Conn) error {
+	h.writeMu.Lock()
+	defer h.writeMu.Unlock()
+	conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	return conn.WriteMessage(websocket.PingMessage, nil)
 }
 
 func (h *EventDisplayHub) Broadcast(eventType string, payload map[string]interface{}) {
 	msg := map[string]interface{}{
-		"type":    eventType,
-		"data":    payload,
-		"time":    time.Now().Unix(),
+		"type": eventType,
+		"data": payload,
+		"time": time.Now().Unix(),
 	}
 	raw, err := json.Marshal(msg)
 	if err != nil {
@@ -45,16 +60,13 @@ func (h *EventDisplayHub) Broadcast(eventType string, payload map[string]interfa
 	h.mu.RLock()
 	var dead []*websocket.Conn
 	for conn := range h.clients {
-		conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
-		err := conn.WriteMessage(websocket.TextMessage, raw)
-		if err != nil {
+		if err := h.writeText(conn, raw); err != nil {
 			log.Printf("[ws-event] write error, marking dead: %v", err)
 			dead = append(dead, conn)
 		}
 	}
 	h.mu.RUnlock()
 
-	// Remove dead clients (needs write lock, done outside RLock)
 	if len(dead) > 0 {
 		h.mu.Lock()
 		for _, conn := range dead {
@@ -74,6 +86,7 @@ func HandleEventDisplay(c *gin.Context) {
 
 	DefaultEventDisplayHub.Add(conn)
 	defer DefaultEventDisplayHub.Remove(conn)
+	defer conn.Close()
 
 	conn.SetReadLimit(512)
 	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -82,21 +95,18 @@ func HandleEventDisplay(c *gin.Context) {
 		return nil
 	})
 
-	// Send initial ping with write deadline
-	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	// Send initial connected message
 	pingMsg, _ := json.Marshal(map[string]interface{}{
 		"type": "connected",
 		"data": map[string]interface{}{"message": "EventDisplay connected"},
 	})
-	conn.WriteMessage(websocket.TextMessage, pingMsg)
+	DefaultEventDisplayHub.writeText(conn, pingMsg)
 
-	// Keep-alive ticker
+	// Keep-alive ticker — uses writeMu to safely write
 	ticker := time.NewTicker(25 * time.Second)
 	defer ticker.Stop()
 
-	done := make(chan struct{})
 	go func() {
-		defer close(done)
 		for range ticker.C {
 			h := DefaultEventDisplayHub
 			h.mu.RLock()
@@ -105,8 +115,7 @@ func HandleEventDisplay(c *gin.Context) {
 			if !exists {
 				return
 			}
-			conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			if err := h.writePing(conn); err != nil {
 				return
 			}
 		}

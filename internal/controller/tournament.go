@@ -601,13 +601,19 @@ type TournamentEventPayload struct {
 	RoomID    string  `json:"room_id" binding:"required"`
 	EventType string  `json:"event_type" binding:"required,oneof=match_started match_finished"`
 	PlayerNum int     `json:"player_num" binding:"omitempty,oneof=1 2"` // 1 or 2 — which player is reporting
-	Score     float64 `json:"score"`
+	Score     float64 `json:"score" binding:"omitempty,gte=0"`
 }
 
 func HandleTournamentEvent(c *gin.Context) {
 	var req TournamentEventPayload
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Error(c, http.StatusBadRequest, response.FormatBindError(err))
+		return
+	}
+
+	// Validate score: must be finite and non-negative
+	if math.IsNaN(req.Score) || math.IsInf(req.Score, 0) || req.Score < 0 {
+		response.Error(c, http.StatusBadRequest, "invalid score: must be finite, non-negative")
 		return
 	}
 
@@ -641,20 +647,24 @@ func HandleTournamentEvent(c *gin.Context) {
 			return
 		}
 
-		// Update only the submitting player's score and mark submitted
-		scoreField := "player1_score"
-		if req.PlayerNum == 2 {
-			scoreField = "player2_score"
-		}
-		updates := map[string]interface{}{
-			scoreField: req.Score,
-		}
+		// Atomic anti-re-submit: update only if not yet submitted (single SQL, race-safe)
+		var updates map[string]interface{}
 		if req.PlayerNum == 1 {
-			updates["player1_submitted"] = true
+			updates = map[string]interface{}{"player1_score": req.Score, "player1_submitted": true}
 		} else {
-			updates["player2_submitted"] = true
+			updates = map[string]interface{}{"player2_score": req.Score, "player2_submitted": true}
 		}
-		config.DB.Model(&match).Updates(updates)
+		whereField := "player1_submitted"
+		if req.PlayerNum == 2 {
+			whereField = "player2_submitted"
+		}
+		result := config.DB.Model(&model.TournamentMatch{}).
+			Where("id = ? AND "+whereField+" = ?", match.ID, false).
+			Updates(updates)
+		if result.RowsAffected == 0 {
+			response.Error(c, http.StatusConflict, fmt.Sprintf("Player %d already submitted", req.PlayerNum))
+			return
+		}
 
 		// Refresh match to see both scores
 		config.DB.First(&match, match.ID)
@@ -687,12 +697,9 @@ func HandleTournamentEvent(c *gin.Context) {
 			}
 			winnerID = *match.Player2ID
 		} else {
-			// Tie — default to Player 1 for single elimination
-			if match.Player1ID == nil {
-				response.Error(c, http.StatusBadRequest, "Player 1 not assigned")
-				return
-			}
-			winnerID = *match.Player1ID
+			// Tie — single elimination fairness: draw keeps bracket moving
+			response.Error(c, http.StatusConflict, "Match is a draw — admin intervention required")
+			return
 		}
 
 		config.DB.Model(&match).Updates(map[string]interface{}{

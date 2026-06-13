@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func broadcastRoomEvent(eventType, roomID, p1Name, p2Name string) {
@@ -524,8 +526,13 @@ func SubmitDuelResultDB(code, playerUID string, playerNum int, score float64) (*
 	var room model.Room
 	var matchStatus string
 
+	// Validate score: must be finite, non-negative
+	if math.IsNaN(score) || math.IsInf(score, 0) || score < 0 {
+		return nil, "", fmt.Errorf("invalid score: must be finite, non-negative")
+	}
+
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("id = ?", code).First(&room).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", code).First(&room).Error; err != nil {
 			return err
 		}
 		if room.Status != "playing" {
@@ -562,15 +569,32 @@ func SubmitDuelResultDB(code, playerUID string, playerNum int, score float64) (*
 			}
 		}
 
+		// Anti re-submit: reject if already submitted
+		if playerNum == 1 && room.Player1Submitted {
+			return fmt.Errorf("player 1 already submitted")
+		}
+		if playerNum == 2 && room.Player2Submitted {
+			return fmt.Errorf("player 2 already submitted")
+		}
+
+		// Compute real score from game_sessions (server-trusted) — filter by competition/tournament mode only
+		realScore := score
+		var session model.GameSession
+		if err := tx.Where("participant_id = ? AND mode IN ?", participant.ID, []string{"competition", "tournament"}).
+			Order("created_at DESC").First(&session).Error; err == nil {
+			// Use total_time from the latest game session in competition/tournament mode (lower = faster)
+			realScore = session.TotalTime
+		}
+
 		updates := map[string]interface{}{"last_activity": time.Now()}
 		switch playerNum {
 		case 1:
 			updates["player1_uid"] = playerUID
-			updates["player1_score"] = score
+			updates["player1_score"] = realScore
 			updates["player1_submitted"] = true
 		case 2:
 			updates["player2_uid"] = playerUID
-			updates["player2_score"] = score
+			updates["player2_score"] = realScore
 			updates["player2_submitted"] = true
 		default:
 			return fmt.Errorf("player_num must be 1 or 2")
@@ -636,14 +660,14 @@ func SubmitDuelResult(c *gin.Context) {
 	var req struct {
 		PlayerUID string  `json:"player_uid" binding:"required"`
 		PlayerNum int     `json:"player_num" binding:"required,oneof=1 2"`
-		Score     float64 `json:"score"`
+		Score     float64 `json:"score" binding:"gte=0"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": response.FormatBindError(err)})
 		return
 	}
 
-	// Use client-provided score directly (pure speed: lower = faster)
+	// Server-recomputed score from game_sessions (pure speed: lower = faster)
 	room, matchStatus, err := SubmitDuelResultDB(code, req.PlayerUID, req.PlayerNum, req.Score)
 	if err != nil {
 		if err.Error() == "room is not in playing state" {
