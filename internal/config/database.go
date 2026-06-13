@@ -76,6 +76,10 @@ func ConnectDB() {
 	db.Exec(`ALTER TABLE tournament_matches ADD COLUMN IF NOT EXISTS player2_submitted BOOLEAN DEFAULT FALSE`)
 	db.Exec(`ALTER TABLE game_results ADD COLUMN IF NOT EXISTS variant_list JSONB DEFAULT '[]'`)
 	db.Exec(`ALTER TABLE game_results ADD COLUMN IF NOT EXISTS client_ts BIGINT DEFAULT 0`)
+	db.Exec(`ALTER TABLE participants ADD COLUMN IF NOT EXISTS synced_at TIMESTAMP`)
+	db.Exec(`ALTER TABLE game_sessions ADD COLUMN IF NOT EXISTS synced_at TIMESTAMP`)
+	db.Exec(`ALTER TABLE game_results ADD COLUMN IF NOT EXISTS synced_at TIMESTAMP`)
+	db.Exec(`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS synced_at TIMESTAMP`)
 
 	DB = db
 

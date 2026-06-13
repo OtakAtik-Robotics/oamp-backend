@@ -11,6 +11,7 @@ import (
 
 	"oamp-backend/internal/config"
 	"oamp-backend/internal/route"
+	"oamp-backend/internal/sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -23,6 +24,13 @@ func main() {
 	}
 
 	config.ConnectDB()
+
+	// Start cloud sync engine (only if CLOUD_SYNC_URL is set)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if eng := sync.New(); eng != nil {
+		go eng.Start(ctx)
+	}
 
 	r := gin.Default()
 	route.SetupRoutes(r)
@@ -49,10 +57,10 @@ func main() {
 	<-quit
 	log.Println("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server shutdown error: %v", err)
 	}
 

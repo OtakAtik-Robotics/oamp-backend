@@ -63,9 +63,10 @@ type Participant struct {
 	GripStrength      float64   `json:"grip_strength" binding:"omitempty,gte=0,lte=200"`
 	Dexterity         float64   `json:"dexterity" binding:"omitempty,gte=0,lte=500"`
 	IsPremium         bool      `json:"is_premium" gorm:"default:false"`
-	AiAnalysis        string    `json:"ai_analysis" gorm:"type:text"`
-	AiAnalysisUpdatedAt *time.Time `json:"ai_analysis_updated_at"`
-	CreatedAt         time.Time `json:"created_at"`
+	AiAnalysis           string     `json:"ai_analysis" gorm:"type:text"`
+	AiAnalysisUpdatedAt  *time.Time `json:"ai_analysis_updated_at"`
+	SyncedAt             *time.Time `json:"synced_at"`
+	CreatedAt            time.Time  `json:"created_at"`
 }
 
 type EventBatch struct {
@@ -89,8 +90,9 @@ type GameSession struct {
 	CognitiveAge    int           `json:"cognitive_age"`
 	VisuoSpatialFit float64       `json:"visuo_spatial_fit"`
 	DexterityScore  float64       `json:"dexterity_score"`
-	Score           float64       `json:"score"`
-	CreatedAt       time.Time     `json:"created_at"`
+	Score       float64   `json:"score"`
+	SyncedAt    *time.Time `json:"synced_at"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 // Room — database-backed 1v1 match room
@@ -108,8 +110,9 @@ type Room struct {
 	Player1Submitted  bool      `json:"player1_submitted" gorm:"default:false"`
 	Player2Submitted  bool      `json:"player2_submitted" gorm:"default:false"`
 	Winner            string    `json:"winner" gorm:"size:10"` // "1", "2", or "draw"
-	LastActivity      time.Time `json:"last_activity" gorm:"not null"`
-	CreatedAt         time.Time `json:"created_at"`
+	LastActivity      time.Time  `json:"last_activity" gorm:"not null"`
+	SyncedAt          *time.Time `json:"synced_at"`
+	CreatedAt         time.Time  `json:"created_at"`
 }
 
 // PlayerState — per-player state within a room
@@ -155,6 +158,7 @@ type GameResult struct {
 	CogAgeList   Float64Array `json:"cog_age_list" gorm:"type:jsonb"`
 	VariantList  StringArray  `json:"variant_list" gorm:"type:jsonb"`
 	ClientTs     int64        `json:"client_ts" gorm:"default:0"`
+	SyncedAt     *time.Time   `json:"synced_at"`
 	CreatedAt    time.Time    `json:"created_at"`
 }
 

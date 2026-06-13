@@ -144,5 +144,11 @@ func SetupRoutes(r *gin.Engine) {
 
 		// Game client — check active cup match by UID
 		api.GET("/tournaments/active-match/:uid", controller.GetActiveMatchByUID)
+
+		// Cloud sync endpoints (used by local server to push data)
+		sync := api.Group("/sync", middleware.ValidateSyncKey())
+		sync.POST("/participants", controller.SyncParticipants)
+		sync.POST("/game-sessions", controller.SyncGameSessions)
+		sync.POST("/game-results", controller.SyncGameResults)
 	}
 }
