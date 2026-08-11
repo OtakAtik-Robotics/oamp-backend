@@ -54,6 +54,7 @@ type Participant struct {
 	ID                uint      `json:"id" gorm:"primaryKey"`
 	UID               string    `json:"uid" binding:"omitempty" gorm:"uniqueIndex;not null"`
 	Name              string    `json:"name" binding:"required" gorm:"size:100;not null"`
+	ClassName         string    `json:"class_name" gorm:"size:100"`
 	Age               int       `json:"age" binding:"required,gte=3,lte=150" gorm:"not null"`
 	Grade             string    `json:"grade" binding:"required" gorm:"size:30"`
 	Gender            string    `json:"gender" binding:"required,oneof=male female" gorm:"size:10"`
@@ -137,11 +138,12 @@ type GameEvent struct {
 	TimeSec    float64 `json:"time_sec,omitempty"`
 }
 
-// GameResult — result from desktop game client (bracelet UID scan)
+// GameResult — result from desktop game client.
 type GameResult struct {
 	UID          string    `json:"uid" gorm:"primaryKey"` // one result per participant UID
 	Mode         string    `json:"mode" gorm:"size:20;default:'training'"` // "training" | "competition"
 	NickName     string    `json:"nick_name" gorm:"size:100"`
+	ClassName    string    `json:"class_name" gorm:"size:100"`
 	Gender       string    `json:"gender" gorm:"size:10"`
 	Age          int       `json:"age"`
 	Task01       float64   `json:"task01" binding:"gte=0,lte=600"`

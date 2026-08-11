@@ -63,11 +63,12 @@ func saveGameResult(result *model.GameResult) error {
 	varJSON, _ := json.Marshal(result.VariantList)
 
 	return config.DB.Exec(
-		`INSERT INTO game_results (uid, mode, nick_name, gender, age, task01, task02, task03, task04, task05, task06, task07, task08, task_avg, cognitive_age, visuo_spatial, cog_age_list, variant_list, client_ts, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		`INSERT INTO game_results (uid, mode, nick_name, class_name, gender, age, task01, task02, task03, task04, task05, task06, task07, task08, task_avg, cognitive_age, visuo_spatial, cog_age_list, variant_list, client_ts, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		 ON CONFLICT (uid) DO UPDATE SET
 		 	mode = EXCLUDED.mode,
 		 	nick_name = EXCLUDED.nick_name,
+		 	class_name = EXCLUDED.class_name,
 		 	gender = EXCLUDED.gender,
 		 	age = EXCLUDED.age,
 		 	task01 = EXCLUDED.task01,
@@ -85,7 +86,7 @@ func saveGameResult(result *model.GameResult) error {
 		 	variant_list = EXCLUDED.variant_list,
 		 	client_ts = EXCLUDED.client_ts,
 		 	created_at = EXCLUDED.created_at`,
-		result.UID, result.Mode, result.NickName, result.Gender, result.Age,
+		result.UID, result.Mode, result.NickName, result.ClassName, result.Gender, result.Age,
 		result.Task01, result.Task02, result.Task03, result.Task04,
 		result.Task05, result.Task06, result.Task07, result.Task08,
 		result.TaskAvg, result.CognitiveAge, result.VisuoSpatial,

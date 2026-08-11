@@ -8,6 +8,7 @@ import (
 	"oamp-backend/internal/model"
 	"oamp-backend/pkg/response"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -47,6 +48,65 @@ func RegisterParticipant(c *gin.Context) {
 
 	if err := config.DB.Create(&participant).Error; err != nil {
 		log.Printf("[participant] DB insert failed: %v", err)
+		response.Error(c, http.StatusInternalServerError, "Failed to register participant")
+		return
+	}
+
+	response.CreatedWithMessage(c, "Participant registered successfully", participant)
+}
+
+type GameParticipantRegistrationRequest struct {
+	Name      string `json:"name" binding:"required"`
+	ClassName string `json:"class_name" binding:"required"`
+}
+
+// RegisterGameParticipant finds or creates a participant for the desktop game.
+// The desktop client supplies only Name and Class; UID remains an internal identity.
+func RegisterGameParticipant(c *gin.Context) {
+	var request GameParticipantRegistrationRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		response.Error(c, http.StatusBadRequest, response.FormatBindError(err))
+		return
+	}
+
+	request.Name = strings.TrimSpace(request.Name)
+	request.ClassName = strings.TrimSpace(request.ClassName)
+	if request.Name == "" || request.ClassName == "" {
+		response.Error(c, http.StatusBadRequest, "name and class_name are required")
+		return
+	}
+
+	var existing model.Participant
+	if err := config.DB.
+		Where("LOWER(name) = LOWER(?) AND LOWER(class_name) = LOWER(?)", request.Name, request.ClassName).
+		First(&existing).Error; err == nil {
+		response.OKWithMessage(c, "Participant ready", existing)
+		return
+	}
+
+	var activeBatch model.EventBatch
+	if err := config.DB.Where("is_active = ?", true).First(&activeBatch).Error; err != nil {
+		response.Error(c, http.StatusBadRequest, "No active session configured")
+		return
+	}
+	if activeBatch.UidPrefix == "" {
+		response.Error(c, http.StatusBadRequest, "No UID prefix configured for the active session")
+		return
+	}
+
+	config.DB.Model(&model.EventBatch{}).Where("id = ?", activeBatch.ID).
+		UpdateColumn("uid_counter", gorm.Expr("uid_counter + 1"))
+	config.DB.First(&activeBatch, activeBatch.ID)
+
+	participant := model.Participant{
+		UID:       fmt.Sprintf("%s%03d", activeBatch.UidPrefix, activeBatch.UidCounter),
+		Name:      request.Name,
+		ClassName: request.ClassName,
+		Grade:     request.ClassName,
+		Gender:    "unknown",
+	}
+	if err := config.DB.Create(&participant).Error; err != nil {
+		log.Printf("[participant] game registration failed: %v", err)
 		response.Error(c, http.StatusInternalServerError, "Failed to register participant")
 		return
 	}
@@ -96,12 +156,27 @@ func GetParticipantByID(c *gin.Context) {
 	response.OKWithMessage(c, "", participant)
 }
 
-// GET /api/v1/participants/lookup/:nickname — find participant by name
+// GET /api/v1/participants/lookup/:nickname — find participant by name and class
 func LookupParticipant(c *gin.Context) {
 	nickname := c.Param("nickname")
+	className := c.Query("class_name")
+
+	// Previous name-only lookup, kept for reference:
+	// var participant model.Participant
+	// if err := config.DB.Where("name ILIKE ?", nickname).First(&participant).Error; err != nil {
+	//     response.Error(c, http.StatusNotFound, "Participant not found")
+	//     return
+	// }
+
+	if className == "" {
+		response.Error(c, http.StatusBadRequest, "class_name is required")
+		return
+	}
 
 	var participant model.Participant
-	if err := config.DB.Where("name ILIKE ?", nickname).First(&participant).Error; err != nil {
+	if err := config.DB.
+		Where("LOWER(name) = LOWER(?) AND LOWER(class_name) = LOWER(?)", nickname, className).
+		First(&participant).Error; err != nil {
 		response.Error(c, http.StatusNotFound, "Participant not found")
 		return
 	}
@@ -109,6 +184,7 @@ func LookupParticipant(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"uid":    participant.UID,
 		"name":   participant.Name,
+		"class_name": participant.ClassName,
 		"age":    participant.Age,
 		"gender": participant.Gender,
 	})

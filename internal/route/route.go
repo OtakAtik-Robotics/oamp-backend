@@ -71,6 +71,7 @@ func SetupRoutes(r *gin.Engine) {
 	{
 		// Participant registration
 		api.POST("/participants", controller.RegisterParticipant)
+		api.POST("/participants/register-game", controller.RegisterGameParticipant)
 		api.GET("/participants", controller.GetParticipants)
 		api.GET("/participants/stats", controller.GetParticipantsWithScores)
 		api.GET("/participants/id/:id", controller.GetParticipantByID)

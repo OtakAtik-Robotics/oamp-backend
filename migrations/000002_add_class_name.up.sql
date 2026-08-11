@@ -1,0 +1,5 @@
+ALTER TABLE participants
+    ADD COLUMN IF NOT EXISTS class_name VARCHAR(100);
+
+ALTER TABLE game_results
+    ADD COLUMN IF NOT EXISTS class_name VARCHAR(100);
